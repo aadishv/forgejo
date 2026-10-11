@@ -6,12 +6,13 @@
 // leaf, so a delta re-renders the row it changed and nothing else.
 
 import {Link, useRouterState} from '@tanstack/react-router';
-import {CircleDot, GitPullRequest, Inbox, KanbanSquare, Search, SquarePen} from 'lucide-react';
+import {CircleDot, GitPullRequest, Home, Inbox, KanbanSquare, PanelLeftClose, Search, SquarePen} from 'lucide-react';
 import {runInAction} from 'mobx';
 import {observer} from 'mobx-react-lite';
 import {memo, useCallback, useEffect, useState} from 'react';
 import {groupId, groupKind} from '../../data/models.ts';
-import {Avatar, NavGroup, NavHeading, NavItem, ResizeHandle} from '../../ui/index.ts';
+import {Avatar, IconButton, NavGroup, NavHeading, NavItem, ResizeHandle} from '../../ui/index.ts';
+import {repoOfPath} from '../paths.ts';
 import {shortcutHint} from '../shortcuts/index.ts';
 import {LOCAL_PREFS, readSplash, SIDEBAR_MAX, SIDEBAR_MIN, writeSplash} from '../splash.ts';
 import {type Session, useApp, useSession} from '../store.ts';
@@ -19,6 +20,7 @@ import {openCreate} from '../create.ts';
 import {lazyComponent, whenIdle} from '../lazy.tsx';
 import {AccountMenu} from './AccountMenu.tsx';
 import {SidebarBody, SidebarTop} from './Frame.tsx';
+import {toggleSidebar} from './sidebar.ts';
 
 /** New issue (C): Linear's compose button, at the top. */
 function SidebarCreate() {
@@ -111,10 +113,13 @@ function owners(session: Session): Owner[] {
   return list.sort((a, b) => Number(b.id === userId) - Number(a.id === userId) || a.login.localeCompare(b.login));
 }
 
+/** A repository: its home; current on every page of it (lists, issues, code). */
 const RepoItem = memo(function RepoItem({owner, name}: {owner: string; name: string}) {
+  const key = `${owner}/${name}`.toLowerCase();
+  const current = useRouterState({select: (s) => repoOfPath(s.location.pathname) === key});
   return (
     <NavItem asChild inset label={name}>
-      <Link to="/$owner/$repo/issues" params={{owner, repo: name}} activeOptions={{includeSearch: false, exact: false}}/>
+      <Link to="/$owner/$repo" params={{owner, repo: name}} activeProps={{}} aria-current={current ? 'page' : undefined}/>
     </NavItem>
   );
 });
@@ -131,12 +136,20 @@ const sameOwner = (a: {owner: Owner; open: boolean}, b: {owner: Owner; open: boo
 /** Re-renders only when its owner, repositories or open state change (owners() builds new objects each time). */
 const OwnerGroup = memo(function OwnerGroup({owner, open, onToggle}: {owner: Owner; open: boolean; onToggle: (login: string, open: boolean) => void}) {
   const [all, setAll] = useState(false);
-  const shown = all ? owner.repos : owner.repos.slice(0, SHOWN);
+  // The repository on screen: its row stays listed (after the first ten, it joins them) and, folded, the owner's
+  // row is current in its place: the sidebar always says where you are.
+  const prefix = `${owner.login.toLowerCase()}/`;
+  const here = useRouterState({select: (s) => {
+    const key = repoOfPath(s.location.pathname);
+    return key?.startsWith(prefix) ? owner.repos.find((r) => r.toLowerCase() === key.slice(prefix.length)) : undefined;
+  }});
+  const first = owner.repos.slice(0, SHOWN);
+  const shown = all ? owner.repos : here !== undefined && !first.includes(here) ? [...first, here] : first;
   const more = owner.repos.length - shown.length;
   return (
-    <NavGroup label={owner.login} leading={<OwnerAvatar id={owner.id} login={owner.login}/>} open={open} onOpenChange={(o) => {
+    <NavGroup label={owner.login} leading={<OwnerAvatar id={owner.id} login={owner.login}/>} open={open} holdsCurrent={here !== undefined} onOpenChange={(o) => {
       onToggle(owner.login, o);
-    }}>
+    }} link={<Link to="/$owner" params={{owner: owner.login}} activeOptions={{exact: true, includeSearch: false}}/>}>
       {shown.map((name) => <RepoItem key={name} owner={owner.login} name={name}/>)}
       {more > 0 && <NavItem inset label={`${String(more)} more`} onClick={() => {
         setAll(true);
@@ -226,11 +239,17 @@ export function Sidebar() {
   return (
     <>
       <SidebarTop>
-        <AccountMenu/>
+        <div className="flex min-w-0 items-center gap-1">
+          <div className="min-w-0 flex-1"><AccountMenu/></div>
+          <IconButton size="sm" icon={PanelLeftClose} label="Hide the sidebar" shortcut={shortcutHint('sidebar.toggle')} onClick={toggleSidebar}/>
+        </div>
         <SidebarCreate/>
         <SidebarSearch/>
       </SidebarTop>
       <SidebarBody>
+        <NavItem asChild icon={Home} label="Home" shortcut={shortcutHint('go.home')}>
+          <Link to="/" activeOptions={{exact: true, includeSearch: false}}/>
+        </NavItem>
         <InboxItem/>
         <NavItem asChild icon={CircleDot} label="My issues" shortcut={shortcutHint('go.issues')}>
           <Link to="/issues" activeOptions={{includeSearch: false}}/>

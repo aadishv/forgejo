@@ -17,21 +17,28 @@
 // go as they scroll). Right click / Shift+F10 opens the same actions as the
 // palette.
 
-import {useNavigate} from '@tanstack/react-router';
+import {useNavigate, useRouterState} from '@tanstack/react-router';
+import {focusList, rememberedRow, rememberRow} from '../../app/listReturn.ts';
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {CircleDashed, FolderGit2, User as UserIcon} from 'lucide-react';
 import {autorun, runInAction, untracked} from 'mobx';
 import {observer} from 'mobx-react-lite';
-import {type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {rememberListRows} from '../../app/boot.ts';
 import {sitePath} from '../../app/config.ts';
+import {pageListRect} from '../../app/shell/Frame.tsx';
 import {shortcutHint, useShortcut, useShortcutScope} from '../../app/shortcuts/index.ts';
 import {type PickerKind, useApp} from '../../app/store.ts';
+import type {Entity} from '../../data/entity.ts';
+import {editing} from '../../intents/session.ts';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger, Icon, LabelIcon, ListGroupHeader, ListRow,
 } from '../../ui/index.ts';
 import {type IssueAction, issueActions, openPicker} from './actions.ts';
-import {AssigneesCell, LabelsCell, PendingCell, priorityIcon, PriorityCell, statusIcon, StatusCell, TitleCell, UpdatedCell, UserAvatar, usePool} from './cells.tsx';
+import {
+  AssigneesCell, DueCell, LabelsCell, PendingCell, PinCell, priorityIcon, PriorityCell, PullStateCell, statusIcon, StatusCell, TitleCell, UpdatedCell, UserAvatar,
+  usePool,
+} from './cells.tsx';
 import {issuePath, issuesOf} from './edits.ts';
 import type {ListCursor} from './flags.ts';
 import type {IssueListModel} from './list.ts';
@@ -70,8 +77,11 @@ export const IssueList = observer(function IssueList({model, scroller, empty, sh
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scroller,
+    ...pageListRect(),
     estimateSize: () => ROW,
-    overscan: 8,
+    // As the inbox: rendered with the next frame, not synchronously in each scroll event.
+    useFlushSync: false,
+    overscan: 4,
     getItemKey,
   });
 
@@ -109,19 +119,39 @@ export const IssueList = observer(function IssueList({model, scroller, empty, sh
     else el.setAttribute('aria-activedescendant', rowId(id));
   }), [cursor, hasRows]);
 
-  const items = virtualizer.getVirtualItems();
+  const all = virtualizer.getVirtualItems();
+  // A list's first render is its most expensive one (every row in view mounts: 70 ms at 1× for My issues, QA
+  // verify3): the first commit shows the top rows, and the rest of the screen follows in a deferred render
+  // React does in slices, so that no navigation holds the main thread for a long task.
+  const complete = useDeferredValue(true, false);
+  const items = complete ? all : all.slice(0, FIRST_ROWS);
   const last = items.at(-1)?.index ?? 0;
   useEffect(() => {
     onNearEnd?.(rows.length > 0 && last >= rows.length - 15);
   }, [last, rows.length, onNearEnd]);
 
+  const here = useRouterState({select: (st) => st.location.pathname});
   const open = (id: number, newTab = false) => {
     const issue = untracked(() => app.session?.data.pool.model('Issue').get(id));
     const path = issue && issuePath(app, issue);
     if (!path) return;
     if (newTab) window.open(sitePath(app.config, path), '_blank', 'noopener');
-    else void navigate({to: path});
+    else {
+      rememberRow(here, id);
+      void navigate({to: path});
+    }
   };
+  // Back on this list (Esc, Back, a breadcrumb): the cursor on the issue the user came from, and the focus.
+  useLayoutEffect(() => {
+    const back = rememberedRow(here);
+    if (typeof back !== 'number' || cursor.activeId !== undefined) return;
+    const at = untracked(() => model.result.get().rows.findIndex((r) => r.type === 'issue' && r.id === back));
+    if (at < 0) return;
+    cursor.setActive(back);
+    virtualizer.scrollToIndex(at, {align: 'auto'});
+    focusList(listRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the rows are there
+  }, [hasRows]);
   const move = (delta: number) => {
     const ids = rows.filter((r): r is Extract<Row, {type: 'issue'}> => r.type === 'issue').map((r) => r.id);
     if (!ids.length) return;
@@ -148,6 +178,14 @@ export const IssueList = observer(function IssueList({model, scroller, empty, sh
   useShortcut('list.select', () => {
     if (cursor.activeId !== undefined) cursor.selected.toggle(cursor.activeId);
   });
+  // Enter and Esc also while nothing has the focus (back from an issue, a click on a notice).
+  useShortcut('list.open', () => {
+    if (cursor.activeId === undefined) return;
+    open(cursor.activeId);
+  }, true, () => cursor.activeId !== undefined);
+  useShortcut('list.clear', () => {
+    cursor.selected.clear();
+  }, true, () => untracked(() => cursor.selected.size) > 0);
   useShortcut('issue.state', picker('status'));
   useShortcut('issue.labels', picker('labels'));
   useShortcut('issue.assignee', picker('assignees'));
@@ -173,8 +211,7 @@ export const IssueList = observer(function IssueList({model, scroller, empty, sh
   handlers.current = {
     click: (id, e) => {
       if (e.shiftKey) {
-        cursor.selected.toggle(id);
-        cursor.setActive(id);
+        cursor.selectRange(id, ids);
         return;
       }
       if (e.metaKey || e.ctrlKey) {
@@ -271,11 +308,18 @@ interface RowHandlers {
   aux(id: number, e: MouseEvent): void;
 }
 
+/** Rows in a list's first commit (about half a screen; the rest renders right after). */
+const FIRST_ROWS = 12;
+
 const rowId = (id: number) => `issue-row-${String(id)}`;
 
 const IssueRow = observer(function IssueRow({id, cursor, handlers, showRepo}: {id: number; cursor: ListCursor; handlers: RowHandlers; showRepo: boolean}) {
+  const app = useApp();
   const pool = usePool();
-  const issue = pool.model('Issue').get(id);
+  // An issue created on this device and not synced yet is in the overlay (temporary, negative id).
+  const issue = pool.model('Issue').get(id) ?? (id < 0 ? editing(app).overlay.createdEntity('Issue', id) as Entity<'Issue'> | undefined : undefined);
+  // A real link: middle-click, ⌘-click and "open in a new tab" are the browser's own; a plain click opens it here.
+  const path = issue && issuePath(app, issue);
   const active = cursor.active.has(id);
   const selected = cursor.selected.has(id);
   if (!issue) return <ListRow role="presentation"> </ListRow>;
@@ -286,17 +330,29 @@ const IssueRow = observer(function IssueRow({id, cursor, handlers, showRepo}: {i
       data-issue={id}
       active={active}
       selected={selected}
+      href={path ? sitePath(app.config, path) : undefined}
+      tabIndex={-1}
       onClick={(e) => {
+        if (path && (e.metaKey || e.ctrlKey) && !e.shiftKey) return;
+        e.preventDefault();
         handlers.click(id, e);
       }}
       onAuxClick={(e) => {
-        handlers.aux(id, e);
+        if (!path) handlers.aux(id, e);
       }}
       leading={<><PriorityCell issue={issue}/><StatusCell issue={issue}/></>}
-      trailing={<><LabelsCell issue={issue}/><AssigneesCell issue={issue}/><UpdatedCell issue={issue}/></>}
+      // Labels give way first on a narrow list, then (a phone) the pin, due date and assignees: the title keeps its
+      // room, and the row its state and age.
+      trailing={<>
+        <span className="contents @max-md:hidden"><PinCell issue={issue}/></span>
+        <PullStateCell issue={issue}/>
+        <span className="flex items-center gap-2 @max-lg:hidden"><LabelsCell issue={issue}/></span>
+        <span className="contents @max-md:hidden"><DueCell issue={issue}/><AssigneesCell issue={issue}/></span>
+        <UpdatedCell issue={issue}/>
+      </>}
     >
       <span className={showRepo ? 'mr-2 text-fg-subtle tabular-nums' : 'mr-2 inline-block min-w-12 text-fg-subtle tabular-nums'}>
-        {showRepo ? <RepoRef repoId={issue.get('repo_id')} number={issue.get('number')}/> : `#${String(issue.get('number'))}`}
+        {id < 0 ? 'New' : showRepo ? <RepoRef repoId={issue.get('repo_id')} number={issue.get('number')}/> : `#${String(issue.get('number'))}`}
       </span>
       <TitleCell issue={issue}/> <PendingCell issueId={issue.id}/>
     </ListRow>

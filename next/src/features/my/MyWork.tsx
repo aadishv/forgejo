@@ -16,7 +16,8 @@ import {ListControls} from '../issues/ListBar.tsx';
 import {ListBody, useListModel} from '../issues/ListPage.tsx';
 
 const TYPES: {type: MyListType | undefined; label: string}[] = [
-  {type: undefined, label: 'All'},
+  // Everything open in the repositories of the workspace (Forgejo's "In your repositories"), not only the viewer's own.
+  {type: undefined, label: 'Your repositories'},
   {type: 'assigned', label: 'Assigned'},
   {type: 'created_by', label: 'Created'},
   {type: 'mentioned', label: 'Mentioned'},
@@ -30,10 +31,11 @@ function Types({to, current, extra}: {to: '/issues' | '/pulls'; current: MyListT
     <>
       {[...TYPES, ...extra ? [extra] : []].map((t) => (
         <Button key={t.label} asChild size="sm" variant={current === t.type ? 'secondary' : 'ghost'}>
+          {/* Exact search: "Your repositories" (no type) is not also current on a typed list (a subset match). */}
           <Link to={to} search={(prev) => {
             const {type: _type, ...rest} = prev;
             return t.type ? {...rest, type: t.type} : rest;
-          }} aria-current={current === t.type ? 'page' : undefined}>{t.label}</Link>
+          }} activeOptions={{exact: true}}>{t.label}</Link>
         </Button>
       ))}
     </>
@@ -55,7 +57,8 @@ const MyList = observer(function MyList({pulls, search}: {pulls: boolean; search
     <>
       <PageHeader icon={pulls ? GitPullRequest : CircleDot} title={pulls ? 'My pull requests' : 'My issues'}>
         <Types to={pulls ? '/pulls' : '/issues'} current={search.type} extra={pulls ? {type: 'review_requested', label: 'Review requested'} : undefined}/>
-        <ListControls model={model} stateButtons={false}/>
+        {/* Open / closed / all where every list has them (Linear's one place for the state). */}
+        <ListControls model={model}/>
       </PageHeader>
       <ListBody model={model} label={pulls ? 'My pull requests' : 'My issues'} showRepo
         empty={<EmptyState icon={pulls ? GitPullRequest : CircleDot} title="All clear" description={DESCRIPTIONS[search.type ?? 'all']}/>}/>

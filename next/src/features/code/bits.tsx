@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Small pieces every code view shares (one look each): a short SHA, a
-// relative time, a commit as a list row, the page column.
+// relative time, a commit as a list row.
 
-import type {ReactNode} from 'react';
 import {shortSha} from '../../code/refs.ts';
 import type {CommitInfo} from '../../code/source.ts';
 import {Avatar} from '../../ui/index.ts';
@@ -30,13 +29,9 @@ export function summary(message: string): string {
 /** A commit as a RowList row: author, summary, SHA, time. */
 export function commitRow(c: CommitInfo): RowParts {
   return {
-    leading: <Avatar name={c.authorName} size="sm"/>,
+    leading: <Avatar name={c.authorName} src={c.authorAvatar === '' ? undefined : c.authorAvatar} size="sm"/>,
     main: <>{summary(c.message)} <span className="text-fg-subtle">{c.authorName}</span></>,
     trailing: <><Sha sha={c.sha}/><Ago at={c.date}/></>,
   };
 }
 
-/** A page's reading column (releases, checks). */
-export function Column({children}: {children: ReactNode}) {
-  return <div className="flex max-w-lg flex-col gap-4 px-6 py-6">{children}</div>;
-}

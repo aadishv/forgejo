@@ -13,6 +13,7 @@
 // the override keeps showing (no flicker) until its intent is confirmed or
 // fails, and sets show the other members' changes at once (they commute).
 
+import {PROJECT_FIELD} from './intents.ts';
 import {untracked} from 'mobx';
 import type {Entity} from '../data/entity.ts';
 import type {Pool} from '../data/pool.ts';
@@ -74,6 +75,14 @@ export function commentBody(overlay: Overlay, c: Entity<'Comment'>): {text: stri
 export function notificationStatus(overlay: Overlay, n: Entity<'Notification'>): string {
   const o = overlay.field('Notification', n.id, 'status');
   return o ? o.value as string : n.get('status');
+}
+
+/** The project an issue is on as the user sees it (a pending `issue.project` first): its id (0: none) and column (0: unknown, the default). */
+export function issueProject(pool: Pool, overlay: Overlay, issueId: number): {project: number; column: number} {
+  const o = overlay.field('Issue', issueId, PROJECT_FIELD);
+  if (o) return o.value as {project: number; column: number};
+  const [pi] = pool.model('ProjectIssue').by('issue_id', issueId);
+  return pi ? {project: pi.get('project_id'), column: pi.get('column_id')} : {project: 0, column: 0};
 }
 
 /** The column of an issue's card on a project board (and its pending position), or undefined when not on it. */
@@ -215,4 +224,10 @@ export function issueSubscribed(pool: Pool, overlay: Overlay, issue: Entity<'Iss
   // Forgejo's participants: posters of comments, code comments and reviews.
   for (const c of pool.model('Comment').by('issue_id', issue.id)) if (c.get('poster_id') === me && PARTICIPATION.has(c.get('type'))) return true;
   return false;
+}
+
+/** Whether a code comment's conversation is resolved as the user sees it (a pending resolve first), and by whom (0: open). */
+export function commentResolver(overlay: Overlay, c: Entity<'Comment'>): number {
+  const o = overlay.field('Comment', c.id, 'resolve_doer_id');
+  return o ? o.value as number : c.get('resolve_doer_id');
 }

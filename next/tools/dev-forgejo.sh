@@ -69,6 +69,10 @@ mysql) PORT="${NEXT_FORGEJO_PORT:-3010}" ;; # not 3001-3003: the integration tes
 esac
 
 WORK="$ROOT_DIR/$db"
+# The instance's internal socket (app.ini below). A Unix socket path is at most 107 bytes: a deep work dir gets
+# one under /tmp named after it instead.
+SOCK="$WORK/internal.sock"
+[ "${#SOCK}" -le 100 ] || SOCK="/tmp/forgejo-next-$(printf %s "$WORK" | sha1sum | cut -c1-12).sock"
 INI="$WORK/custom/conf/app.ini"
 PIDFILE="$WORK/forgejo.pid"
 URL="http://127.0.0.1:$PORT/"
@@ -140,6 +144,10 @@ APP_DATA_PATH = $WORK/data
 STATIC_ROOT_PATH = $REPO
 OFFLINE_MODE = true
 DISABLE_SSH = true
+; Each instance its own internal socket (git hooks call back through it). The default,
+; /run/forgejo/internal.sock, is shared by every local instance: stopping one removed it
+; and broke pushes, merges and contents API writes on the others.
+INTERNAL_LISTENER_PATH = $SOCK
 
 [security]
 INSTALL_LOCK = true
@@ -161,6 +169,10 @@ ENABLED = false
 
 ${NEXT_FORGEJO_EXTRA_INI:-}
 EOF
+  # The Forgejo Next toggle on classic pages (routers/livesync/classic.go): "Try Forgejo Next", and once opted
+  # in "Back to Forgejo Next" / "Turn off". Operators install the same file (the admin page shows it).
+  mkdir -p "$WORK/custom/templates/custom"
+  cp "$REPO/routers/livesync/classic_header.tmpl" "$WORK/custom/templates/custom/header.tmpl"
 }
 
 start() {

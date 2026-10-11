@@ -7,13 +7,14 @@
 // changes shows them at once, online or offline. `editing(app)` is how views
 // reach them.
 
-import {autorun, runInAction, untracked} from 'mobx';
+import {autorun, runInAction, untracked, when} from 'mobx';
 import {sitePath} from '../app/config.ts';
-import {notify} from '../app/notices.ts';
+import {dismissSeries, notify} from '../app/notices.ts';
+import {reach} from '../app/online.ts';
 import type {App, Session} from '../app/store.ts';
 import {APIPrefix} from '../protocol/types.gen.ts';
-import {type Channel, type IntentMessage, Intents} from './executor.ts';
-import type {Names} from './intents.ts';
+import {type Channel, type IntentMessage, Intents, type Override} from './executor.ts';
+import {type Names, withIssue} from './intents.ts';
 import {Overlay} from './overlay.ts';
 import {IntentDb} from './store.ts';
 
@@ -66,9 +67,10 @@ export function editing(app: App): Editing {
     names: () => names(s),
     onFailed: (d) => {
       notify(app, {
-        tone: 'danger', title: `${d.title} failed`,
+        tone: 'danger', title: `${withIssue(d.title, d.issueNumber)} failed`,
         description: `${d.reason ?? ''} It was undone and kept in Unsynced changes.`.trim(),
-        action: d.intent ? {label: 'Retry', run: () => {
+        // A refusal would be refused again: no Retry (the Unsynced panel still offers it, with the text).
+        action: d.intent && !d.refused ? {label: 'Retry', run: () => {
           intents.retry(d.key);
         }} : {label: 'Review', run: () => {
           openUnsynced(app);
@@ -76,12 +78,12 @@ export function editing(app: App): Editing {
       });
     },
     onOverride: (o) => {
-      // Shown inline on the issue's page (Overrides): no second message when that page is open.
+      // Shown inline on the issue's page (Overrides): no second message when that page is open, and the page
+      // takes this notice back when it opens (overrideSeries).
       if (app.ui.issueOpen === o.issueId) return;
-      const who = o.who ? untracked(() => data.pool.model('User').get(o.who)?.data.login) : undefined;
+      const words = overrideWords(app, o, true);
       notify(app, {
-        tone: 'neutral', title: `You overrode ${who ? `@${who}’s` : 'a newer'} change`,
-        description: `The ${o.field} was changed while you were offline; your change won.`,
+        tone: 'neutral', title: words.title, description: words.description, series: overrideSeries(o.id),
         action: {label: 'Undo', run: () => {
           intents.undoOverride(o.id);
         }},
@@ -128,6 +130,33 @@ export function editing(app: App): Editing {
   return e;
 }
 
+/** The notice of an override, taken back once the issue's page shows it. */
+export const overrideSeries = (id: string) => `override:${id}`;
+
+/**
+ * The one wording of "your offline change won over a newer one", for the notice and the issue page's callout: who
+ * made the newer change (yourself on another device is not "@dev"), and what else happened to the issue meanwhile
+ * (closed or reopened by someone).
+ */
+export function overrideWords(app: App, o: Override, named = false): {title: string; description: string} {
+  const s = app.session;
+  return untracked(() => {
+    const pool = s?.data.pool;
+    const issue = pool?.model('Issue').get(o.issueId)?.data;
+    const ref = named && issue ? ` of #${String(issue.number)}` : '';
+    const self = o.who !== 0 && o.who === s?.userId;
+    const login = o.who && !self ? pool?.model('User').get(o.who)?.data.login : undefined;
+    const title = `You overrode ${login ? `@${login}’s` : 'a newer'} change to the ${o.field}${ref}`;
+    const where = self ? 'It was changed on Forgejo from another device or tab' : 'It changed on Forgejo';
+    let also = '';
+    if (issue && o.field !== 'status' && o.since !== undefined) {
+      const closed = issue.state === 'closed' && issue.closed_at !== undefined && Date.parse(issue.closed_at) > o.since;
+      if (closed) also = ' The issue was also closed meanwhile.';
+    }
+    return {title, description: `${where} while you were offline; your change was applied last.${also}`};
+  });
+}
+
 /** Opens the "Unsynced changes" panel. */
 export function openUnsynced(app: App): void {
   runInAction(() => {
@@ -141,6 +170,7 @@ function names(s: Session): Names {
     label: (id: number) => pool.model('Label').get(id)?.data.name ?? '',
     user: (id: number) => pool.model('User').get(id)?.data.login ?? '',
     milestone: (id: number) => pool.model('Milestone').get(id)?.data.title ?? '',
+    issue: (id: number) => pool.model('Issue').get(id)?.data.number,
   }));
 }
 
@@ -168,4 +198,17 @@ function broadcast(name: string): Channel {
       ch?.close();
     },
   };
+}
+
+/**
+ * Says that a change was queued while offline (or while Forgejo cannot be reached), and takes the notice back once
+ * the change has been sent: "Review queued" no longer stays after the review went out (QA verify3).
+ */
+export function notifyQueued(app: App, intentId: string, title: string): void {
+  if (reach(app.session?.data.status.connection) === 'online') return;
+  const series = `queued:${intentId}`;
+  notify(app, {tone: 'neutral', title, description: 'It is sent when you are back online.', series});
+  when(() => !editing(app).intents.records.has(intentId), () => {
+    dismissSeries(app, series);
+  });
 }

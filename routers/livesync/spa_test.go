@@ -90,26 +90,55 @@ func get(t *testing.T, h http.Handler, path string, header ...string) *httptest.
 
 func TestSPARoute(t *testing.T) {
 	for p, want := range map[string]bool{
-		"/":                         true,
-		"/notifications":            true,
-		"/issues":                   true,
-		"/pulls":                    true,
-		"/user2/repo1/issues":       true,
-		"/user2/repo1/issues/1":     true,
-		"/user2/repo1/pulls/12":     true,
-		"/user2/repo1.wiki/issues":  false, // not a usable repository name
-		"/user2/repo1/issues/new":   false,
-		"/user2/repo1/issues/0":     false,
-		"/user2/repo1/issues/1/x":   false,
-		"/user2/repo1":              false,
-		"/api/v1/issues":            false, // reserved owner names are upstream's routes
-		"/user/settings/issues":     false,
-		"/admin/repo1/pulls":        false,
-		"/-/next/issues":            false,
-		"/user2/repo1/milestones":   false,
-		"/explore/repos/issues":     false,
-		"/org/org3/issues":          false,
-		"/user2/repo1/issues/1.png": false,
+		"/":                        true,
+		"/notifications":           true,
+		"/issues":                  true,
+		"/pulls":                   true,
+		"/user2/repo1/issues":      true,
+		"/user2/repo1/issues/1":    true,
+		"/user2/repo1/pulls/12":    true,
+		"/user2/repo1.wiki/issues": false, // not a usable repository name
+		"/user2/repo1/issues/new":  false,
+		"/user2/repo1/issues/new-0f8fad5b-d9cb-469f-a165-70867728950e": true, // an issue created offline
+		"/user2/repo1/pulls/new-0f8fad5b-d9cb-469f-a165-70867728950e":  false,
+		"/user2/repo1/issues/new-x":                                    false,
+		"/user2/repo1/issues/0":                                        false,
+		"/user2/repo1/issues/1/x":                                      false,
+		"/user2/repo1":                                                 true,
+		"/user2/repo1.wiki":                                            false,
+		"/api/v1/issues":                                               false, // reserved owner names are upstream's routes
+		"/user/settings/issues":                                        false,
+		"/admin/repo1/pulls":                                           false,
+		"/-/next/issues":                                               false,
+		"/user2/repo1/milestones":                                      false,
+		"/explore/repos/issues":                                        false,
+		"/org/org3/issues":                                             false,
+		"/user2/repo1/issues/1.png":                                    false,
+		"/user2":                                                       true, // an owner's page
+		"/explore":                                                     false,
+		"/user2.keys":                                                  false, // the user's files (reservedUserPatterns)
+		"/user2.rss":                                                   false,
+		// Code addresses open the app's code views (codeAddress).
+		"/user2/repo1/src/branch/master/README.md":                     true,
+		"/user2/repo1/src":                                             true,
+		"/user2/repo1/src/x":                                           false,
+		"/user2/repo1/commits/branch/master":                           true,
+		"/user2/repo1/commit/65f1bf27bc3bf70f64657658635e66094edbcb4d": true,
+		"/user2/repo1/commit/65f1bf2":                                  false,
+		"/user2/repo1/branches":                                        true,
+		"/user2/repo1/branches/x":                                      false,
+		"/user2/repo1/releases":                                        true,
+		"/user2/repo1/releases/tag/v1":                                 false,
+		"/user2/repo1/actions":                                         true,
+		"/user2/repo1/actions/runs/3":                                  true,
+		"/user2/repo1/actions/runs/3/jobs/0/attempt/1":                 true,
+		"/user2/repo1/actions/runs/3/artifacts":                        false,
+		"/user2/repo1/compare/master...feature/x":                      true,
+		"/user2/repo1/compare/master":                                  false,
+		"/user2/repo1/pulls/2/files":                                   true,
+		"/user2/repo1/pulls/2/checks":                                  false,
+		"/user2/repo1/src/branch/master/../../settings":                false,
+		"/user2/repo1/wiki":                                            false,
 	} {
 		assert.Equal(t, want, spaRoute(p), p)
 	}
@@ -194,7 +223,7 @@ func TestSPAServing(t *testing.T) {
 			assert.Equal(t, "image/svg+xml", rec.Header().Get("Content-Type"))
 
 			// The UI's own routes get the document.
-			for _, p := range []string{"/-/next", "/-/next/", "/-/next/callback", "/-/next/gallery"} {
+			for _, p := range []string{"/-/next", "/-/next/", "/-/next/callback", "/-/next/gallery", "/-/next/code/o/r/src/branch/main/README.md", "/-/next/code/o/r/compare/release/0.2...main"} {
 				rec = get(t, h, sub+p+"?code=x&state=y")
 				require.Equal(t, http.StatusOK, rec.Code, p)
 				assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"), p)
@@ -221,7 +250,9 @@ func TestSPAServing(t *testing.T) {
 			} {
 				assert.Equal(t, 299, get(t, h, sub+"/user2/repo1/issues/1", header...).Code, name)
 			}
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1"} {
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2/repo1", opted...).Code, "a repository's home")
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2?tab=repositories", opted...).Code, "an owner's page")
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)

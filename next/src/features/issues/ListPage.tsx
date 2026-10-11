@@ -11,11 +11,12 @@ import {SearchX} from 'lucide-react';
 import {autorun, observable, runInAction} from 'mobx';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useCallback, useEffect, useLayoutEffect, useState} from 'react';
-import {PageBody} from '../../app/shell/Frame.tsx';
+import {PageBody, viewChange} from '../../app/shell/Frame.tsx';
 import type {ListSearch} from '../../app/search.ts';
 import {useApp, useSession} from '../../app/store.ts';
 import {editing} from '../../intents/session.ts';
-import {EmptyState, ListRow, Skeleton} from '../../ui/index.ts';
+import {Button, EmptyState, ListRow, Skeleton} from '../../ui/index.ts';
+import {useNavigate} from '@tanstack/react-router';
 import {closedPager} from './closed.ts';
 import {IssueList} from './IssueList.tsx';
 import {IssueListModel, type ListSource} from './list.ts';
@@ -58,6 +59,8 @@ export const ListBody = observer(function ListBody({model, label, empty, showRep
   // ref is attached after its children's layout effects ran.
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const {data} = useSession();
+  const app = useApp();
+  const navigate = useNavigate();
   const src = model.source;
   const q = model.query;
   // Older closed issues are not in the summary (B6): load them when the list can show them.
@@ -78,14 +81,33 @@ export const ListBody = observer(function ListBody({model, label, empty, showRep
     });
   }, [nearEnd]);
   const filtered = q.filter.state !== 'open' || q.filter.labels.length > 0 || q.filter.q !== undefined || q.filter.assignee !== undefined ||
-    q.filter.poster !== undefined || q.filter.milestone !== undefined;
+    q.filter.poster !== undefined || q.filter.milestone !== undefined || q.filter.status !== undefined || q.filter.priority !== undefined ||
+    q.filter.label !== undefined || q.filter.repo !== undefined;
   const loading = data.status.loading > 0 && model.result.get().rows.length === 0;
+  const typed = q.filter.q?.trim();
   const none = loading ? <ListSkeleton/> : filtered ?
-    <EmptyState icon={SearchX} title="Nothing matches" description="No item on this device matches these filters."/> :
+    <EmptyState icon={SearchX} title="Nothing matches" description="No item on this device matches these filters."
+      action={<span className="flex flex-wrap justify-center gap-2">
+        {typed && <Button variant="primary" onClick={() => {
+          // The command menu searches the rest: other repositories, the index, and Forgejo itself.
+          runInAction(() => {
+            app.ui.paletteQuery = typed;
+            app.ui.paletteOpen = true;
+          });
+        }}>Search everywhere</Button>}
+        <Button onClick={() => {
+        // Back to the list's default view (open items, no search, no filter; the grouping and order stay).
+        const {group, sort} = model.search;
+        const next = {...(group ? {group} : {}), ...(sort ? {sort} : {})};
+        const keep = viewChange();
+        model.setSearch(next);
+        void navigate({to: '.', replace: true, ...keep, search: ((prev: Record<string, unknown>) => ({...(typeof prev.type === 'string' ? {type: prev.type} : {}), ...next})) as never});
+      }}>Clear the search and filters</Button>
+      </span>}/> :
     empty;
   return (
     <PageBody ref={setScroller}>
-      <IssueList model={model} scroller={scroller} empty={none} showRepo={showRepo} label={label}
+      <IssueList model={model} scroller={scroller} empty={none} showRepo={Boolean(showRepo) && q.group !== 'repo'} label={label}
         onNearEnd={onNearEnd}/>
       {pager && wantsClosed && <ClosedFooter pager={pager}/>}
     </PageBody>

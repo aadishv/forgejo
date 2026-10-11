@@ -141,12 +141,15 @@ export function scrub(root: DocumentFragment | Element): void {
       continue;
     }
     const allowed = ATTRS[tag];
+    // A code block's language (class="language-go", dropped with the classes): kept as data-lang for highlighting.
+    const lang = tag === 'code' ? /(?:^|\s)language-([\w+#.-]{1,32})(?:\s|$)/.exec(el.getAttribute('class') ?? '')?.[1] : undefined;
     for (const {name, value} of [...el.attributes]) {
       // ARIA: names and hiding only — references (aria-labelledby, -owns, …) could point at the app's own elements.
       const ok = (GLOBAL_ATTRS.has(name) || (allowed?.has(name) ?? false) || (name === 'id' && value.startsWith('user-content-')) || name === 'aria-label' || name === 'aria-hidden') &&
         (!URL_ATTRS.has(name) || safeUrl(name, tag, value));
       if (!ok || (name === 'target' && value !== '_blank')) el.removeAttribute(name);
     }
+    if (lang) el.setAttribute('data-lang', lang);
     if (tag === 'a' && el.hasAttribute('target')) el.setAttribute('rel', 'noopener noreferrer');
     if (tag === 'img' && !el.hasAttribute('loading')) el.setAttribute('loading', 'lazy');
     // A video's source loads when played, not when the page renders (it may be on another host).
@@ -154,12 +157,22 @@ export function scrub(root: DocumentFragment | Element): void {
   }
 }
 
-/** Parses server HTML inertly, scrubs it, and makes it the element's content. */
-export function setMarkup(el: Element, html: string): void {
+/** Server HTML parsed inertly into a template (the policy's one use: see the header). */
+function inert(html: string): HTMLTemplateElement {
   const tpl = document.createElement('template');
   const p = getPolicy();
-  // The policy's one use: an inert template (see the header).
   (tpl as {innerHTML: unknown}).innerHTML = p ? p.createHTML(html) : html;
+  return tpl;
+}
+
+/** Parses server HTML inertly, scrubs it, and makes it the element's content. */
+export function setMarkup(el: Element, html: string): void {
+  const tpl = inert(html);
   scrub(tpl.content);
   el.replaceChildren(tpl.content);
+}
+
+/** The text of server HTML (a rendered commit message's words, never its markup), parsed inertly. */
+export function textOfMarkup(html: string): string {
+  return inert(html).content.textContent;
 }

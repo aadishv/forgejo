@@ -60,6 +60,8 @@ export interface IntentRecord {
    * pool (a revoked repository's labels) still says which label.
    */
   title?: string;
+  /** The issue's number when it was made: a draft whose issue was deleted meanwhile still says which one. */
+  issueNumber?: number;
 }
 
 export interface DraftRecord {
@@ -70,6 +72,8 @@ export interface DraftRecord {
   intent?: Intent;
   /** failed: why. */
   reason?: string;
+  /** failed: Forgejo refused it (a 4xx, or a refusal it reports as a server error): the same again would fail too. */
+  refused?: boolean;
   /** The text the user typed. */
   text?: string;
   /** text: what the edit is based on (an editor restored from it keeps its base: a 3-way merge stays right). */
@@ -80,6 +84,8 @@ export interface DraftRecord {
   title: string;
   issueId?: number;
   repoId?: number;
+  /** failed: the issue's number (from when the change was made). */
+  issueNumber?: number;
   /** ms since epoch. */
   at: number;
 }

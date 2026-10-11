@@ -32,6 +32,7 @@ import {ProtocolVersion} from '../protocol/types.gen.ts';
 import {HttpError, load, type LoadResult} from './bootstrap.ts';
 import {type GroupState, GroupTable} from './groups.ts';
 import {sameUnits} from './replace.ts';
+import {dropRequests, isNetAbort, netSignal} from './net.ts';
 import {markOnce} from './rum.ts';
 import {openSSE, openWebSocket, type Transport, type TransportEnv} from './transport.ts';
 
@@ -46,7 +47,12 @@ export interface SyncAuth {
   refresh(): Promise<string | null>;
 }
 
-export type Connection = 'idle' | 'connecting' | 'catching_up' | 'live' | 'offline' | 'unauthorized' | 'stopped';
+/**
+ * `unreachable`: the browser is online but Forgejo has not answered several connection attempts in a row (a
+ * server restart, a VPN drop, a captive portal): the app says so, probes the server every few seconds and
+ * reconnects as soon as it answers.
+ */
+export type Connection = 'idle' | 'connecting' | 'catching_up' | 'live' | 'offline' | 'unreachable' | 'unauthorized' | 'stopped';
 
 export interface SyncStatus {
   connection: Connection;
@@ -136,6 +142,10 @@ interface Session {
    */
   pending: number[];
   reqSeq: number;
+  /** Until the welcome: a connection that neither opens nor fails (dead Wi-Fi, a captive portal) is given up. */
+  handshake?: ReturnType<typeof setTimeout> | undefined;
+  /** When the transport was opened (now()). */
+  started: number;
 }
 
 /** A tailed job log: who wants it, and where the session resumes it (the lines received so far of a task). */
@@ -149,6 +159,22 @@ const RECENT = 'recent';
 const MAX_BARRIERS = 16;
 const WORKSPACE = 'workspace';
 
+/** Failed connection attempts in a row (the browser online) after which Forgejo counts as unreachable. */
+const UNREACHABLE_AFTER = 3;
+/** How often an unreachable server is probed (ms). */
+const HEALTH_PROBE_MS = 2000;
+/**
+ * How long a connection may take to be welcomed (ms). One that hangs (requests and sockets that never answer) is
+ * then closed and Forgejo counts as unreachable at once, with Retry (QA round 2: it read "Connecting" for good).
+ */
+const HANDSHAKE_MS = 8000;
+/** The workspace request's deadline, and the wait before it is asked again in the same session (ms). */
+const WORKSPACE_MS = 15_000;
+const WORKSPACE_RETRY_MS = 5000;
+
+/** Timeline events whose rows are not delivered as deltas (B6 conditionals): their issue is loaded again. */
+const CONDITIONAL_EVENTS: ReadonlySet<string> = new Set(['add_dependency', 'remove_dependency', 'issue_ref', 'comment_ref', 'pull_ref', 'change_issue_ref']);
+
 export class SyncClient {
   readonly status: SyncStatus = observable({
     connection: 'idle', transport: undefined, loading: 0, groups: 0, serverSyncId: 0, lastError: undefined,
@@ -161,8 +187,15 @@ export class SyncClient {
   private stopped = true;
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  /** While unreachable: the health probe's timer (a cheap GET that ends the backoff wait when it answers). */
+  private probeTimer: ReturnType<typeof setTimeout> | undefined;
   private transportKind: 'ws' | 'sse';
   private failedOpens = 0;
+  /**
+   * The connection was found dead (a stall: see net.ts): requests in flight were aborted, and bootstraps wait
+   * for the next welcome (or a health probe that answers) instead of hanging on the dead network again.
+   */
+  private netDown = false;
   /** Tab holds (not persisted): group → holders. */
   private readonly ephemeral = new Map<string, Set<string>>();
   private live = new Set<string>();
@@ -312,6 +345,7 @@ export class SyncClient {
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       window.removeEventListener('offline', this.onOffline);
+      clearTimeout(this.probeTimer);
     }
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
@@ -494,7 +528,9 @@ export class SyncClient {
       this.setStatus({connection: 'offline'});
       return; // the online event reconnects
     }
-    this.setStatus({connection: 'connecting', transport: this.transportKind});
+    // While Forgejo counts as unreachable, an attempt does not flip the indicator back to "Connecting" (it
+    // flapped every few seconds while a stalled network recovered); the welcome makes it live.
+    this.setStatus({connection: this.status.connection === 'unreachable' ? 'unreachable' : 'connecting', transport: this.transportKind});
     const handlers = {
       open: () => {
         void this.opened(session);
@@ -511,9 +547,15 @@ export class SyncClient {
     const session: Session = {
       transport: undefined as unknown as Transport,
       welcomed: false, subs: new Map(), barriers: new Map(), ping: undefined, pong: undefined, limited: new Set(), everCaughtUp: false,
-      pending: [], reqSeq: 0,
+      pending: [], reqSeq: 0, started: this.now(),
     };
     this.session = session;
+    session.handshake = setTimeout(() => {
+      if (this.session !== session || session.welcomed) return;
+      this.attempts = Math.max(this.attempts, UNREACHABLE_AFTER - 1);
+      this.setStatus({lastError: 'Forgejo did not answer'});
+      this.closed({opened: false});
+    }, HANDSHAKE_MS);
     session.transport = open(this.o.endpoint, handlers, this.o.env);
   }
 
@@ -548,6 +590,7 @@ export class SyncClient {
   }
 
   private closed(info: {opened: boolean; code?: number; reason?: string}): void {
+    this.lost();
     this.endSession();
     if (this.stopped || this.status.connection === 'unauthorized') return;
     if (!info.opened && this.o.transport !== 'ws' && this.o.transport !== 'sse') {
@@ -560,17 +603,36 @@ export class SyncClient {
     this.scheduleReconnect();
   }
 
+  /**
+   * The session's transport died, a handshake hung or a pong did not come: requests still in flight may sit on
+   * the same dead network. They are aborted (and bootstraps queued again) so that once the network is back,
+   * the browser's connections are free for the new session's requests.
+   */
+  private lost(): void {
+    this.netDown = true;
+    for (const g of this.running.keys()) this.queue.add(g);
+    dropRequests();
+  }
+
+  /** The network works again (a welcome, or a health probe answered): queued bootstraps may run. */
+  private netUp(): void {
+    if (!this.netDown) return;
+    this.netDown = false;
+    this.pump();
+  }
+
   private endSession(): void {
     const s = this.session;
     if (!s) return;
     this.session = undefined;
+    clearTimeout(s.handshake);
     if (s.ping !== undefined) clearInterval(s.ping);
     if (s.pong !== undefined) clearTimeout(s.pong);
     for (const b of s.barriers.values()) b.reject(new Error('disconnected'));
     s.barriers.clear();
     s.transport.close();
     if (!this.stopped && this.status.connection !== 'unauthorized') {
-      this.setStatus({connection: offline() ? 'offline' : 'connecting'});
+      this.setStatus({connection: offline() ? 'offline' : this.attempts + 1 >= UNREACHABLE_AFTER ? 'unreachable' : 'connecting'});
     }
   }
 
@@ -583,6 +645,48 @@ export class SyncClient {
       this.reconnectTimer = undefined;
       this.connect();
     }, delay);
+    if (this.attempts >= UNREACHABLE_AFTER) this.probeHealth();
+  }
+
+  /**
+   * While Forgejo cannot be reached, a cheap health check every few seconds: when it answers, the backoff's
+   * wait ends and the client reconnects at once (a server back after a restart is live again within seconds).
+   */
+  private probeHealth(): void {
+    if (this.probeTimer !== undefined || this.stopped) return;
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = undefined;
+      if (this.stopped || this.session?.welcomed || offline()) return;
+      if (!this.session && this.reconnectTimer === undefined) return;
+      const f = this.o.env?.fetch ?? fetch;
+      void f(`${this.o.endpoint}/health`, {cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(HEALTH_PROBE_MS)}).then((res) => {
+        if (!res.ok) {
+          this.probeHealth();
+          return;
+        }
+        this.netUp();
+        // A handshake begun while the network was stalled may hang on a dead connection: start afresh.
+        if (this.session && !this.session.welcomed && this.now() - this.session.started >= HEALTH_PROBE_MS) {
+          this.endSession();
+          this.attempts = 0;
+          this.connect();
+        } else if (!this.session) {
+          this.retryNow();
+        }
+      }, () => {
+        this.probeHealth();
+      });
+    }, HEALTH_PROBE_MS);
+  }
+
+  /** Connects now instead of waiting out the backoff ("Retry now", or the server answered a probe). */
+  retryNow(): void {
+    if (this.stopped || this.session || this.status.connection === 'unauthorized') return;
+    this.attempts = 0;
+    clearTimeout(this.probeTimer);
+    this.probeTimer = undefined;
+    this.netUp();
+    this.connect();
   }
 
   private send(msg: ClientMessage): void {
@@ -675,6 +779,8 @@ export class SyncClient {
       return;
     }
     session.welcomed = true;
+    clearTimeout(session.handshake);
+    this.netDown = false;
     // Every persisted version is at most the server's position: purges from now on cover what hydration has not read yet.
     this.pool.noteVersion(msg.server_sync_id);
     this.serverPos = Math.max(this.serverPos, msg.server_sync_id);
@@ -766,6 +872,7 @@ export class SyncClient {
   private delta(session: Session, msg: DeltaMessage): void {
     const top = new Map<string, number>();
     const viewer = this.o.userId;
+    const reload = new Set<string>();
     this.pool.batch(() => {
       for (const c of list(msg.changes)) {
         const own = c.m === 'User' && c.id === viewer;
@@ -775,10 +882,19 @@ export class SyncClient {
         else if (c.op === 'D') this.pool.del(c.m, c.id, c.g, c.v);
         // The viewer's own profile may come outside its group's subscription (B5): it raises no position.
         if (!own && (top.get(c.g) ?? 0) < c.v) top.set(c.g, c.v);
+        if (c.op === 'U' && c.m === 'Comment' && CONDITIONAL_EVENTS.has((c.d as {type?: string} | undefined)?.type ?? '')) reload.add(c.g);
       }
     });
     for (const [g, v] of top) this.groups.raise(g, v);
     this.raiseCaughtUp(session, msg.to);
+    // A dependency or a cross-reference changed: the issue's view-dependent rows (B6 conditionals: its
+    // dependencies, the references from other repositories) come with a load of the issue only, never as a
+    // delta. Its timeline event says so: load the issue again (it replaces the group, those rows included).
+    for (const g of reload) {
+      if (groupKind(g) !== 'issue' || !this.live.has(g)) continue;
+      this.groups.need(g, undefined, 'conditionals');
+      this.enqueue(g);
+    }
   }
 
   private raiseCaughtUp(session: Session, pos: number): void {
@@ -1066,11 +1182,18 @@ export class SyncClient {
     try {
       const token = await this.o.auth.token();
       const f = this.o.env?.fetch ?? fetch;
-      const res = await f(`${this.o.endpoint}/workspace`, {headers: {Authorization: `Bearer ${token}`}, cache: 'no-store'});
+      const res = await f(`${this.o.endpoint}/workspace`, {headers: {Authorization: `Bearer ${token}`}, cache: 'no-store', signal: netSignal(WORKSPACE_MS)});
       if (!res.ok) throw new HttpError(res.status, res.statusText);
       ws = await res.json() as Workspace;
     } catch (err) {
       this.setStatus({lastError: `workspace: ${String(err)}`});
+      // Asked again while this session lasts (a stall or a timeout); a new session asks anyway.
+      const session = this.session;
+      if (session?.welcomed && isNetAbort(err)) {
+        setTimeout(() => {
+          if (this.session === session && !this.stopped) void this.refreshWorkspace();
+        }, WORKSPACE_RETRY_MS);
+      }
       return;
     }
     if (this.stopped || ws.viewer_id !== this.o.userId) return;
@@ -1114,7 +1237,7 @@ export class SyncClient {
 
   private pump(): void {
     if (this.stopped || this.status.connection === 'unauthorized') return;
-    if (offline()) return;
+    if (offline() || this.netDown) return;
     const now = this.now();
     let nextRetry = Number.POSITIVE_INFINITY;
     while (this.running.size < this.o.maxBootstraps) {
@@ -1180,7 +1303,15 @@ export class SyncClient {
       this.pump();
       return;
     }
-    if (!ok && err !== undefined) await this.loadFailed(group, err);
+    if (!ok && err !== undefined) {
+      if (this.netDown && isNetAbort(err)) {
+        this.queue.add(group); // the connection died under it: again once the network is back, no backoff
+      } else {
+        // A load that stalled: is the session still there? (A dead one is closed by the missing pong.)
+        if (isNetAbort(err) && this.session?.welcomed) this.probe(this.session);
+        await this.loadFailed(group, err);
+      }
+    }
     this.o.persister.schedule();
     this.pump();
   }

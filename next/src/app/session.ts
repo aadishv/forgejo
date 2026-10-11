@@ -8,9 +8,11 @@
 import {runInAction} from 'mobx';
 import {AUTH_CHANNEL, type AuthMessage, AuthSession} from '../auth/session.ts';
 import {resumeWipes, signOut} from '../auth/signout.ts';
+import {endWebSession, resumeWebLogout} from '../auth/weblogout.ts';
 import type {NextConfig} from '../protocol/types.gen.ts';
 import {openData} from '../sync/data.ts';
 import {sitePath, uiPath} from './config.ts';
+import {classicOfLocation} from './paths.ts';
 import {hasUser, readSplash} from './splash.ts';
 import type {App, Session} from './store.ts';
 
@@ -26,6 +28,7 @@ export async function openSession(config: NextConfig): Promise<Session | undefin
   const splash = readSplash();
   const userId = hasUser(splash) ? Number(splash.user) : NaN;
   resumeWipes(Number.isSafeInteger(userId) ? userId : undefined);
+  resumeWebLogout();
   if (!Number.isSafeInteger(userId) || userId <= 0) return undefined;
   const auth = new AuthSession(config.oauth, userId);
   // The leader's modules, fetched while IndexedDB is read (data.ts loads them lazily).
@@ -61,11 +64,8 @@ export async function performSignOut(app: App): Promise<void> {
   await signOut({
     auth: s.auth, close: () => s.data.close(),
     // Forgejo's classic sign-out (same-origin POST passes its cross-origin protection).
-    endWebSession: async () => {
-      await fetch(sitePath(app.config, '/user/logout'), {
-        method: 'POST', credentials: 'same-origin', redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(3000),
-      });
-    },
+    // Remembered and finished later when it cannot be made now (offline): auth/weblogout.ts.
+    endWebSession: () => endWebSession(sitePath(app.config, '/user/logout')),
   });
   location.replace(app.config.base);
 }
@@ -85,12 +85,38 @@ export async function requestSignOut(app: App): Promise<void> {
 }
 
 /**
- * Turns the opt-in cookie off and opens this page in the classic UI (the UI's
- * own pages have no classic counterpart: the dashboard then).
+ * The classic page of a route (site path and query): a canonical route is its own (filters kept), a page below
+ * the base maps back to the classic shape (a code view to the same path, a board to its repository's or owner's
+ * projects).
+ */
+export function classicOfHere(app: App, path: string, search = ''): string {
+  const s = app.session;
+  if (!s) return classicOfLocation(path, search);
+  const pool = s.data.pool;
+  return classicOfLocation(path, search, {
+    login: pool.model('User').get(s.userId)?.get('login'),
+    defaultBranch: (owner, repo) => {
+      const full = `${owner}/${repo}`.toLowerCase();
+      for (const r of pool.model('Repository').all()) if (r.get('full_name').toLowerCase() === full) return r.get('default_branch') || undefined;
+      return undefined;
+    },
+    board: (id) => {
+      const p = pool.model('Project').get(id);
+      if (!p) return undefined;
+      const repo = pool.model('Repository').get(p.get('repo_id'))?.get('full_name');
+      return repo ? {repo} : {owner: pool.model('User').get(p.get('owner_id'))?.get('login')};
+    },
+  });
+}
+
+/**
+ * Turns the opt-in cookie off and opens this page in the classic UI (the
+ * UI's own pages map to their classic counterparts: classicOfHere).
  */
 export function switchToClassic(app: App): void {
-  const here = `${location.pathname}${location.search}`;
-  const back = location.pathname.startsWith(app.config.base) ? sitePath(app.config, '/') : here;
+  const sub = app.config.app_sub_url;
+  const site = location.pathname.startsWith(`${sub}/`) || location.pathname === sub ? location.pathname.slice(sub.length) || '/' : '/';
+  const back = sitePath(app.config, classicOfHere(app, site, location.search));
   const go = () => {
     location.assign(`${uiPath(app.config, 'opt-out')}?redirect=${encodeURIComponent(back)}`);
   };

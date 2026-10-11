@@ -8,27 +8,30 @@
 // in this tab paints highlighted in its first frame (memory cache), so
 // switching between files never waits.
 
-import {useNavigate} from '@tanstack/react-router';
-import {ChevronDown, File, FileSymlink, Folder, FolderGit2, GitBranch, GitCommitHorizontal, History, ScrollText, Tag} from 'lucide-react';
+import {useNavigate, useRouterState} from '@tanstack/react-router';
+import {ChevronDown, File, Folder, FolderGit2, GitBranch, GitCommitHorizontal, History, Tag} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
-import {type ReactNode, useCallback, useEffect, useMemo, useState} from 'react';
+import {type ReactNode, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {sitePath} from '../../app/config.ts';
+import {useShortcut, useShortcutScope} from '../../app/shortcuts/index.ts';
+import {PageColumn} from '../../app/shell/Frame.tsx';
 import {useApp, useSession} from '../../app/store.ts';
 import {type RefKind, type Resolved, codeSplat, parentPath, resolveRef, shortSha} from '../../code/refs.ts';
 import {CodeSource, encodePath, type FileContent} from '../../code/source.ts';
 import type {APIBlame, APITree, APITreeEntry} from '../../protocol/types.gen.ts';
 import {
-  BlameCell, Button, CodeLine, CodeTokens, EmptyState, Icon, LineNo, ListRow, Menu, MenuContent, MenuLabel, MenuRadioGroup, MenuRadioItem,
-  MenuSeparator, MenuTrigger, Skeleton, TextLink,
+  BlameCell, Button, CodeLine, CodeTokens, CommandPopover, EmptyState, Icon, LineNo, ListRow, type PickOption, SegmentedControl, Skeleton, TextLink,
 } from '../../ui/index.ts';
 import {usePool} from '../issues/cells.tsx';
 import {ago} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {hasRefs, type Loaded, refTable, useLoad, useSource} from './hooks.ts';
-import {Lines} from './Lines.tsx';
+import {Lines, type LinesHandle} from './Lines.tsx';
 import {RowList} from './RowList.tsx';
-import {CodeLink, codeTo} from './nav.tsx';
+import {CodeLink, codeTo, useCodeRows} from './nav.tsx';
 import {Unloaded} from './states.tsx';
+import {entryParts, FilesPanel, formatSize, RefCommit, treeOrder} from './tree.tsx';
+import {BlobImage, ReadmePanel, readmeOf, renderable, RenderedMarkup} from './Rendered.tsx';
 
 interface SrcProps extends CodeViewProps {
   blame: boolean;
@@ -42,7 +45,7 @@ export const SrcView = observer(function SrcView(props: SrcProps) {
   const r = resolveRef(refs, props.kind, props.rest);
   if (!r) {
     return (
-      <CodeFrame view={props} title={props.rest.join('/') || props.repo}>
+      <CodeFrame view={props} title={props.rest.join('/') || 'Code'}>
         {() => <NoRef repoId={props.repoId} named={props.kind !== undefined}/>}
       </CodeFrame>
     );
@@ -79,7 +82,15 @@ const SrcAt = observer(function SrcAt(props: SrcProps & {at: Resolved}) {
   const parentKey = at.path ? CodeSource.treeKey(repoId, at.sha, parent) : undefined;
   const tree = useLoad(parentKey, () => (parentKey ? src.peek<APITree>(parentKey) : undefined), () => src.tree(repoId, at.sha, parent));
   const entry = tree.state === 'ready' ? tree.value.entries.find((e) => e.name === name) : undefined;
-  const title = <Breadcrumbs {...props}/>;
+  const title = <Breadcrumbs owner={props.owner} repo={props.repo} at={at}/>;
+  // Backspace or Alt+↑, from a directory or a file, from anywhere on the page: up a directory.
+  const navigate = useNavigate();
+  const up = () => {
+    if (at.path) void navigate(codeTo(props.owner, props.repo, codeSplat('src', at, parent)));
+  };
+  useShortcutScope('code');
+  useShortcut('code.up', up);
+  useShortcut('code.upAlt', up);
   const controls = <SrcControls {...props} entry={entry}/>;
   let body: (scroller: HTMLDivElement | null) => ReactNode;
   if (!at.path || entry?.type === 'tree') {
@@ -93,21 +104,27 @@ const SrcAt = observer(function SrcAt(props: SrcProps & {at: Resolved}) {
   } else {
     body = (scroller) => <FileView key={entry.sha} {...props} entry={entry} scroller={scroller}/>;
   }
-  return <CodeFrame view={props} title={title} controls={controls}>{body}</CodeFrame>;
+  // The tab names the file or directory (every file would otherwise be "Code · acme/atlas").
+  const docTitle = `${at.path || 'Code'}${props.blame ? ' (blame)' : ''}`;
+  return <CodeFrame view={props} title={title} controls={controls} docTitle={docTitle}>{body}</CodeFrame>;
 });
 
-/** owner/repo is in the context; the title is the path, each directory a link. */
-function Breadcrumbs({owner, repo, at}: SrcProps & {at: Resolved}) {
+/**
+ * owner/repo is in the context; the title is the path, each directory a link to the same view of it (`view`:
+ * the source, or a history); `linkLast` makes the last segment a link too (a history's path opens its source).
+ */
+export function Breadcrumbs({owner, repo, at, view = 'src', linkLast = false}: {owner: string; repo: string; at: Resolved; view?: 'src' | 'commits'; linkLast?: boolean}) {
   const parts = at.path ? at.path.split('/') : [];
+  // The root is a named segment in the breadcrumb's one style, not a lone "/": the tab's name ("Code", "Commits").
+  const root = view === 'src' ? 'Code' : 'Commits';
   return (
-    <span className="flex min-w-0 items-center gap-1 font-mono text-code">
-      {/* The repository is in the context already: its root is "/" here, named only on the root page. */}
-      <TextLink><CodeLink owner={owner} repo={repo} to={codeSplat('src', at)}>{parts.length ? <span aria-label={`${repo} root`}>/</span> : repo}</CodeLink></TextLink>
+    <span className="flex min-w-0 items-center gap-1">
+      {parts.length ? <TextLink><CodeLink owner={owner} repo={repo} to={codeSplat(view, at)}>{root}</CodeLink></TextLink> : <span>{root}</span>}
       {parts.map((p, i) => (
         <span key={i} className="flex min-w-0 items-center gap-1">
-          {i > 0 && <span className="text-fg-subtle">/</span>}
-          {i === parts.length - 1 ? <span className="truncate">{p}</span> :
-            <TextLink><CodeLink owner={owner} repo={repo} to={codeSplat('src', at, parts.slice(0, i + 1).join('/'))}>{p}</CodeLink></TextLink>}
+          <span className="text-fg-subtle">/</span>
+          {i === parts.length - 1 && !linkLast ? <span className="truncate">{p}</span> :
+            <TextLink><CodeLink owner={owner} repo={repo} to={codeSplat(i === parts.length - 1 ? 'src' : view, at, parts.slice(0, i + 1).join('/'))}>{p}</CodeLink></TextLink>}
         </span>
       ))}
     </span>
@@ -117,6 +134,7 @@ function Breadcrumbs({owner, repo, at}: SrcProps & {at: Resolved}) {
 const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blame, entry}: SrcProps & {at: Resolved; entry: APITreeEntry | undefined}) {
   const app = useApp();
   const pool = usePool();
+  const navigate = useNavigate();
   const file = entry !== undefined && entry.type !== 'tree';
   const def = pool.model('Repository').get(repoId)?.get('default_branch') ?? '';
   return (
@@ -130,10 +148,11 @@ const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blam
       <Button size="sm" variant="ghost" asChild>
         <CodeLink owner={owner} repo={repo} to={codeSplat('commits', at, at.path)}><Icon icon={History} size="sm"/>History</CodeLink>
       </Button>
+      {/* Which view of the file this is, as a switch (a link named after the other view read as a pressed button). */}
       {file && (
-        <Button size="sm" variant="ghost" asChild>
-          <CodeLink owner={owner} repo={repo} to={codeSplat(blame ? 'src' : 'blame', at, at.path)}><Icon icon={blame ? File : ScrollText} size="sm"/>{blame ? 'Source' : 'Blame'}</CodeLink>
-        </Button>
+        <SegmentedControl label="Show the file as" value={blame ? 'blame' : 'src'} onChange={(v) => {
+          void navigate(codeTo(owner, repo, codeSplat(v, at, at.path)));
+        }} options={[{value: 'src', label: 'Source'}, {value: 'blame', label: 'Blame'}]}/>
       )}
       {file && (
         <Button size="sm" variant="ghost" asChild>
@@ -144,73 +163,65 @@ const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blam
   );
 });
 
-/** The branch or tag on screen, and every other one to switch to (same path). */
-const RefMenu = observer(function RefMenu({owner, repo, repoId, at, view}: {owner: string; repo: string; repoId: number; at: Resolved; view: 'src' | 'blame' | 'commits'}) {
+/**
+ * The branch or tag on screen, and every other one to switch to (same path): a picker that filters as you
+ * type (Enter takes the first match), branches first.
+ */
+export const RefMenu = observer(function RefMenu({owner, repo, repoId, at, view}: {owner: string; repo: string; repoId: number; at: Resolved; view: 'src' | 'blame' | 'commits'}) {
   const pool = usePool();
   const navigate = useNavigate();
   const refs = refTable(pool, repoId);
   const branches = [...refs.branches.keys()].sort((a, b) => (a === refs.defaultBranch ? -1 : b === refs.defaultBranch ? 1 : a.localeCompare(b)));
   const tags = [...refs.tags.keys()].sort((a, b) => b.localeCompare(a, undefined, {numeric: true}));
-  const go = (value: string) => {
-    const [kind, ...name] = value.split(':');
-    void navigate(codeTo(owner, repo, codeSplat(view, {kind: kind as RefKind, ref: name.join(':')}, at.path)));
-  };
+  const current = `${at.kind}:${at.ref}`;
+  const option = (kind: RefKind, ref: string): PickOption => ({
+    value: `${kind}:${ref}`, label: ref, group: kind === 'branch' ? 'Branches' : 'Tags', icon: kind === 'branch' ? GitBranch : Tag,
+    meta: kind === 'branch' && ref === refs.defaultBranch ? 'default' : undefined, checked: current === `${kind}:${ref}`,
+    onSelect: () => {
+      void navigate(codeTo(owner, repo, codeSplat(view, {kind, ref}, at.path)));
+    },
+  });
   const label = at.kind === 'commit' ? shortSha(at.sha) : at.ref;
   return (
-    <Menu>
-      <MenuTrigger asChild>
+    <CommandPopover width="md" label="Switch branch or tag" placeholder="Find a branch or tag…" empty="No branch or tag is on this device."
+      options={[...branches.map((b) => option('branch', b)), ...tags.map((t) => option('tag', t))]}
+      trigger={
         <Button size="sm" icon={at.kind === 'tag' ? Tag : at.kind === 'commit' ? GitCommitHorizontal : GitBranch} aria-label={`Ref: ${label}`}>
           <span className="max-w-xs truncate font-mono">{label}</span><Icon icon={ChevronDown} size="sm"/>
         </Button>
-      </MenuTrigger>
-      <MenuContent>
-        <MenuRadioGroup value={`${at.kind}:${at.ref}`} onValueChange={go}>
-          <MenuLabel>Branches</MenuLabel>
-          {branches.map((b) => <MenuRadioItem key={b} value={`branch:${b}`}>{b}</MenuRadioItem>)}
-          {tags.length > 0 && <MenuSeparator/>}
-          {tags.length > 0 && <MenuLabel>Tags</MenuLabel>}
-          {tags.map((t) => <MenuRadioItem key={t} value={`tag:${t}`}>{t}</MenuRadioItem>)}
-        </MenuRadioGroup>
-      </MenuContent>
-    </Menu>
+      }/>
   );
 });
 
 // ---- directory ----
-
-const ENTRY_ICON = {tree: Folder, blob: File, symlink: FileSymlink, commit: FolderGit2} as const;
-
-function formatSize(n: number | undefined): string {
-  if (n === undefined) return '';
-  if (n < 1024) return `${String(n)} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
 
 const DirView = observer(function DirView({owner, repo, repoId, at, scroller}: SrcProps & {at: Resolved; scroller: HTMLDivElement | null}) {
   const src = useSource();
   const key = CodeSource.treeKey(repoId, at.sha, at.path);
   const tree = useLoad(key, () => src.peek<APITree>(key), () => src.tree(repoId, at.sha, at.path));
   if (tree.state !== 'ready') return <Unloaded loaded={tree} what="This directory" skeleton={<ListSkeleton/>}/>;
-  return <Entries owner={owner} repo={repo} repoId={repoId} at={at} tree={tree.value} scroller={scroller}/>;
+  const readme = readmeOf(tree.value.entries);
+  // The Overview's look: a panel headed by the ref's latest commit, the README under it.
+  return (
+    <PageColumn wide>
+      <FilesPanel title={<RefCommit owner={owner} repo={repo} repoId={repoId} kind={at.kind} name={at.ref} sha={at.sha}/>}>
+        <Entries owner={owner} repo={repo} repoId={repoId} at={at} tree={tree.value} scroller={scroller}/>
+      </FilesPanel>
+      {readme && <ReadmePanel repoId={repoId} entry={readme} dir={at.path} at={at}/>}
+    </PageColumn>
+  );
 });
 
 function Entries({owner, repo, repoId, at, tree, scroller}: {owner: string; repo: string; repoId: number; at: Resolved; tree: APITree; scroller: HTMLDivElement | null}) {
-  const src = useSource();
-  const navigate = useNavigate();
-  const entries = useMemo(() => [...tree.entries].sort((a, b) => Number(b.type === 'tree') - Number(a.type === 'tree') || a.name.localeCompare(b.name)), [tree]);
   const pathOf = (e: APITreeEntry) => (at.path ? `${at.path}/${e.name}` : e.name);
+  const rows = useCodeRows<APITreeEntry>(owner, repo, (e) => codeSplat('src', at, pathOf(e)));
+  const src = useSource();
+  const entries = useMemo(() => treeOrder(tree.entries), [tree]);
   if (!entries.length) return <EmptyState icon={Folder} title="Empty directory"/>;
   return (
     <RowList items={entries} scroller={scroller} label="Files" keyOf={(e) => e.name}
-      row={(e) => ({
-        leading: <Icon icon={ENTRY_ICON[e.type as keyof typeof ENTRY_ICON]} size="sm"/>,
-        main: e.name,
-        trailing: e.type === 'blob' ? <span className="tabular-nums">{formatSize(e.size)}</span> : undefined,
-      })}
-      onOpen={(e) => {
-        void navigate(codeTo(owner, repo, codeSplat('src', at, pathOf(e))));
-      }}
+      row={entryParts}
+      onOpen={rows.onOpen} linkOf={rows.linkOf}
       // Hover or the cursor: fetch the entry and highlight it, so opening it paints at once.
       onIntent={(e) => {
         const p = pathOf(e);
@@ -239,9 +250,12 @@ const FileView = observer(function FileView(props: FileProps) {
   const c = content.value;
   switch (c.kind) {
     case 'text':
-      return props.blame ? <BlameView {...props} text={c.text}/> : <TextFile {...props} text={c.text}/>;
+      // An empty file says so (not "1 line · 0 B" over an empty line).
+      if (c.text === '') return <EmptyState icon={File} title="Empty file" description="This file has no content."/>;
+      if (props.blame) return <BlameView {...props} text={c.text}/>;
+      return renderable(at.path) ? <PreviewableFile {...props} text={c.text}/> : <TextFile {...props} text={c.text}/>;
     case 'image':
-      return <ImageFile content={c} path={at.path}/>;
+      return <ImageFile bytes={c.bytes} type={c.type} path={at.path} size={entry.size}/>;
     case 'binary':
       return <EmptyState icon={File} title="Binary file" description={`${formatSize(c.size)} — not shown. Use Raw to download it.`}/>;
     case 'large':
@@ -259,12 +273,25 @@ export function CodeSkeleton() {
   );
 }
 
-function ImageFile({content, path}: {content: Extract<FileContent, {kind: 'image'}>; path: string}) {
-  const url = useMemo(() => URL.createObjectURL(new Blob([content.bytes], {type: content.type})), [content]);
-  useEffect(() => () => {
-    URL.revokeObjectURL(url);
-  }, [url]);
-  return <div className="flex justify-center p-6"><img src={url} alt={path} className="max-w-full"/></div>;
+/** A markdown or SVG file: rendered (Preview, the default) or its markup with line numbers (Markup). */
+function PreviewableFile(props: FileProps & {text: string}) {
+  const {repoId, entry, at, text} = props;
+  const [mode, setMode] = useState<'preview' | 'source'>(() => (hashRange(location.hash) ? 'source' : 'preview'));
+  const kind = renderable(at.path);
+  const toggle = (
+    <span className="ml-auto">
+      {/* "Markup", not a second "Source": the header's Source / Blame switch is beside it. */}
+      <SegmentedControl label="Show the file" value={mode} onChange={setMode} options={[{value: 'preview', label: 'Preview'}, {value: 'source', label: 'Markup'}]}/>
+    </span>
+  );
+  if (mode === 'source') return <TextFile {...props} text={text} toolbar={toggle}/>;
+  return (
+    <>
+      <FileMeta lines={splitLines(text).length} size={entry.size}>{toggle}</FileMeta>
+      {kind === 'svg' ? <BlobImage bytes={text} type="image/svg+xml" alt={at.path}/> :
+        <PageColumn><RenderedMarkup repoId={repoId} sha={entry.sha} path={at.path} text={text} at={at}/></PageColumn>}
+    </>
+  );
 }
 
 /** Splits text into lines (a final newline ends the last line; it does not start an empty one). */
@@ -281,26 +308,46 @@ function useHighlight(repoId: number, sha: string, path: string, text: string) {
   return hl.state === 'ready' ? hl.value : null;
 }
 
-/** The line a #L12 link names (0-based), if any. */
-function hashLine(): number | undefined {
-  const m = /^#L(\d+)$/.exec(location.hash);
-  return m ? Number(m[1]) - 1 : undefined;
+/** The lines a link names (#L12, or #L12-L20 / #L12-20), 0-based and ordered, if any. */
+export function hashRange(hash: string): [number, number] | undefined {
+  const m = /^#?L(\d+)(?:-L?(\d+))?$/.exec(hash);
+  if (!m) return undefined;
+  const a = Number(m[1]) - 1;
+  const b = m[2] === undefined ? a : Number(m[2]) - 1;
+  return a < 0 || b < 0 ? undefined : [Math.min(a, b), Math.max(a, b)];
 }
 
-const TextFile = observer(function TextFile({repoId, entry, at, text, scroller}: FileProps & {text: string}) {
+const TextFile = observer(function TextFile({repoId, entry, at, text, scroller, toolbar}: FileProps & {text: string; toolbar?: ReactNode}) {
   const lines = useMemo(() => splitLines(text), [text]);
   const hl = useHighlight(repoId, entry.sha, at.path, text);
-  const [active] = useState(hashLine);
-  const line = useCallback((i: number) => (
-    <CodeLine id={`L${String(i + 1)}`} active={i === active} gutter={<LineNo n={i + 1}/>}>
-      <CodeTokens text={lines[i] ?? ''} hl={hl} line={i}/>
-    </CodeLine>
-  ), [lines, hl, active]);
+  // The lines named by the address's #L…: tinted, scrolled to — when the page opens and whenever the hash changes
+  // (a click on a line number, a link to another line of the same file, Back).
+  const hash = useRouterState({select: (s) => s.location.hash});
+  const range = useMemo(() => hashRange(hash), [hash]);
+  const navigate = useNavigate();
+  const view = useRef<LinesHandle>(null);
+  const [initial] = useState(() => range?.[0]);
+  useEffect(() => {
+    if (range) view.current?.scrollToLine(range[0]);
+  }, [range]);
+  const pick = useCallback((n: number, extend: boolean) => {
+    const from = extend && range ? range[0] + 1 : n;
+    const next = from === n ? `L${String(n)}` : `L${String(Math.min(from, n))}-L${String(Math.max(from, n))}`;
+    void navigate({to: '.', hash: next, search: true, replace: true});
+  }, [navigate, range]);
+  const line = useCallback((i: number) => {
+    const named = range !== undefined && i >= range[0] && i <= range[1];
+    return (
+      <CodeLine id={`L${String(i + 1)}`} active={range?.[0] === i} linked={named} gutter={<LineNo n={i + 1} onPick={pick}/>}>
+        <CodeTokens text={lines[i] ?? ''} hl={hl} line={i}/>
+      </CodeLine>
+    );
+  }, [lines, hl, range, pick]);
   useMarkPainted(at.path);
   return (
     <>
-      <FileMeta lines={lines.length} size={entry.size}/>
-      <Lines count={lines.length} scroller={scroller} line={line} label={`${at.path}, ${String(lines.length)} lines`} initial={active}/>
+      <FileMeta lines={lines.length} size={entry.size}>{toolbar}</FileMeta>
+      <Lines ref={view} count={lines.length} scroller={scroller} line={line} label={`${at.path}, ${String(lines.length)} lines`} initial={initial}/>
     </>
   );
 });
@@ -321,13 +368,28 @@ function useMarkPainted(path: string): void {
   }, [path]);
 }
 
-function FileMeta({lines, size, children}: {lines: number; size: number | undefined; children?: ReactNode}) {
+/** A file's facts above it (lines or dimensions, size) and its controls. */
+function FileMeta({lines, dims, size, children}: {lines?: number; dims?: string | undefined; size: number | undefined; children?: ReactNode}) {
   return (
     <div className="flex h-control items-center gap-3 border-b border-border-subtle px-4 text-sm text-fg-subtle tabular-nums">
-      <span>{lines} {lines === 1 ? 'line' : 'lines'}</span>
+      {lines !== undefined && <span>{lines} {lines === 1 ? 'line' : 'lines'}</span>}
+      {dims && <span>{dims}</span>}
       {size !== undefined && <span>{formatSize(size)}</span>}
       {children}
     </div>
+  );
+}
+
+/** An image file: its dimensions and size, then the image. */
+function ImageFile({bytes, type, path, size}: {bytes: ArrayBuffer; type: string; path: string; size: number | undefined}) {
+  const [dims, setDims] = useState<string>();
+  return (
+    <>
+      <FileMeta dims={dims} size={size}/>
+      <BlobImage bytes={bytes} type={type} alt={path} onSize={(w, h) => {
+        setDims(`${String(w)} × ${String(h)} px`);
+      }}/>
+    </>
   );
 }
 
@@ -359,7 +421,7 @@ const BlameView = observer(function BlameView({owner, repo, repoId, entry, at, t
         <BlameCell first={first} meta={commit ? ago(commit.authored_at) : undefined}>
           {part && commit && (
             <span title={`${commit.author_name} · ${commit.summary}`} className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-fg">{commit.author_name}</span>
+              <span className="shrink-0 text-fg @max-xl:hidden">{commit.author_name}</span>
               <TextLink><CodeLink owner={owner} repo={repo} to={`commit/${part.sha}`}>{commit.summary}</CodeLink></TextLink>
             </span>
           )}

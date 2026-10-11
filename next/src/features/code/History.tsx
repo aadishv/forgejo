@@ -6,29 +6,35 @@
 // API v1 by full SHA (cached: a page seen once is there offline); the diff
 // from B9 (cached, parsed and highlighted in the worker).
 
-import {useNavigate} from '@tanstack/react-router';
-import {GitCommitHorizontal, History} from 'lucide-react';
+import {Link} from '@tanstack/react-router';
+import {FileCode, GitCommitHorizontal, History} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useCallback, useEffect, useRef, useState} from 'react';
-import {type RefKind, type Resolved, resolveRef, shortSha} from '../../code/refs.ts';
+import {codeSplat, type RefKind, type Resolved, resolveRef, shortSha} from '../../code/refs.ts';
 import type {DiffFile} from '../../code/diff.ts';
 import {CodeSource, type CommitInfo, NotCached} from '../../code/source.ts';
 import {Avatar, Button, Code, EmptyState, Icon, TextLink} from '../../ui/index.ts';
 import {usePool} from '../issues/cells.tsx';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
-import {DiffView} from './DiffView.tsx';
+import {ChangedFiles, type DiffHandle, DiffView} from './DiffView.tsx';
 import {type Loaded, refTable, useLoad, useSource} from './hooks.ts';
 import {Ago, commitRow, Sha, summary} from './bits.tsx';
-import {CodeLink, codeTo} from './nav.tsx';
+import {CodeLink, useCodeRows} from './nav.tsx';
 import {RowList} from './RowList.tsx';
 import {Unloaded} from './states.tsx';
+import {Breadcrumbs, RefMenu} from './Src.tsx';
 
 export const CommitsView = observer(function CommitsView(props: CodeViewProps & {kind: RefKind | undefined; rest: string[]}) {
   const pool = usePool();
   const r = resolveRef(refTable(pool, props.repoId), props.kind, props.rest);
-  const title = r ? <>History of <span className="font-mono">{r.path || (r.kind === 'commit' ? shortSha(r.sha) : r.ref)}</span></> : 'History';
+  // The path's breadcrumb (each directory's history; the path itself opens its source), the ref switcher.
+  const title = r ? <Breadcrumbs owner={props.owner} repo={props.repo} at={r} view="commits" linkLast/> : 'Commits';
+  const controls = r && <>
+    <RefMenu owner={props.owner} repo={props.repo} repoId={props.repoId} at={r} view="commits"/>
+    <Button size="sm" variant="ghost" asChild><CodeLink owner={props.owner} repo={props.repo} to={codeSplat('src', r, r.path)}><Icon icon={FileCode} size="sm"/>Browse files</CodeLink></Button>
+  </>;
   return (
-    <CodeFrame view={props} title={title}>
+    <CodeFrame view={props} title={title} controls={controls} docTitle={r?.path ? `History of ${r.path}` : 'Commits'}>
       {(scroller) => (r ?
         <Commits {...props} at={r} scroller={scroller}/> :
         <EmptyState icon={History} title="Branch or tag not found" description="It does not exist, was deleted, or is not on this device."/>)}
@@ -74,7 +80,7 @@ function useCommitPages(repoId: number, sha: string, path: string) {
 }
 
 function Commits({owner, repo, repoId, at, scroller}: CodeViewProps & {at: Resolved; scroller: HTMLDivElement | null}) {
-  const navigate = useNavigate();
+  const rows = useCodeRows<CommitInfo>(owner, repo, (c) => `commit/${c.sha}`);
   const {s, more} = useCommitPages(repoId, at.sha, at.path);
   if (!s.commits.length) {
     if (s.failed) return <Unloaded loaded={s.failed} what="This history"/>;
@@ -85,9 +91,7 @@ function Commits({owner, repo, repoId, at, scroller}: CodeViewProps & {at: Resol
     <>
       <RowList items={s.commits} scroller={scroller} label="Commits" keyOf={(c) => c.sha}
         row={commitRow}
-        onOpen={(c) => {
-          void navigate(codeTo(owner, repo, `commit/${c.sha}`));
-        }}/>
+        onOpen={rows.onOpen} linkOf={rows.linkOf}/>
       {!s.done && (
         <div className="flex justify-center p-3">
           {s.failed ? <span className="text-sm text-fg-subtle">{s.failed.state === 'offline' ? 'Older commits are not on this device.' : 'Older commits could not be loaded.'}</span> :
@@ -109,16 +113,33 @@ export const CommitView = observer(function CommitView(props: CodeViewProps & {s
   const src = useSource();
   const info = useLoad(`commit:${String(repoId)}:${sha}`, () => src.peek<CommitInfo>(`commit:${String(repoId)}:${sha}`), () => src.commit(repoId, sha));
   const diff = useDiff(repoId, '', sha);
+  const diffRef = useRef<DiffHandle>(null);
   const c = info.state === 'ready' ? info.value : undefined;
+  // No such commit: said once, with the way to the commits (not "this commit's changes do not exist").
+  if (info.state === 'error' && info.status === 404) {
+    return (
+      <CodeFrame view={props} title={shortSha(sha)}>
+        {() => <Unloaded loaded={info} what="This commit" action={
+          <Button asChild><CodeLink owner={owner} repo={repo} to="commits"><Icon icon={History} size="sm"/>All commits</CodeLink></Button>
+        }/>}
+      </CodeFrame>
+    );
+  }
   return (
-    <CodeFrame view={props} title={c ? summary(c.message) : shortSha(sha)}>
+    <CodeFrame view={props} title={c ? summary(c.message) : shortSha(sha)} controls={
+      <Button size="sm" variant="ghost" asChild><CodeLink owner={owner} repo={repo} to={`src/commit/${sha}`}><Icon icon={FileCode} size="sm"/>Browse files</CodeLink></Button>
+    }>
       {(scroller) => (
         <>
-          <header className="flex flex-col gap-2 border-b border-border px-6 py-4">
+          {/* Pinned to the view's left edge: a wide line scrolls the diff sideways, not the commit's header. */}
+          <header className="sticky left-0 flex w-view flex-col gap-2 border-b border-border px-6 py-4">
             {c ? <CommitMeta owner={owner} repo={repo} c={c}/> : <p className="font-mono text-code text-fg-muted">{sha}</p>}
           </header>
           {diff.state === 'ready' ?
-            <DiffView repoId={repoId} base="" head={sha} files={diff.value} scroller={scroller}/> :
+            <>
+              <ChangedFiles files={diff.value} diff={diffRef}/>
+              <DiffView ref={diffRef} repoId={repoId} base="" head={sha} files={diff.value} scroller={scroller}/>
+            </> :
             <Unloaded loaded={diff} what="This commit's changes"/>}
         </>
       )}
@@ -126,13 +147,25 @@ export const CommitView = observer(function CommitView(props: CodeViewProps & {s
   );
 });
 
+/** A commit message's text with its issue references ("#12", "Fixes #3") as links to the repository's issues. */
+function MessageText({owner, repo, text}: {owner: string; repo: string; text: string}) {
+  const parts = text.split(/(?<![\w/])(#\d{1,9})\b/);
+  return (
+    <>
+      {parts.map((p, i) => (i % 2 === 1 ?
+        <TextLink key={i}><Link to="/$owner/$repo/issues/$index" params={{owner, repo, index: p.slice(1)}}>{p}</Link></TextLink> :
+        p))}
+    </>
+  );
+}
+
 function CommitMeta({owner, repo, c}: {owner: string; repo: string; c: CommitInfo}): ReactNode {
   const body = c.message.slice(summary(c.message).length).trim();
   return (
     <>
-      {body && <pre className="font-mono text-code whitespace-pre-wrap text-fg-muted">{body}</pre>}
+      {body && <pre className="font-mono text-code whitespace-pre-wrap text-fg-muted"><MessageText owner={owner} repo={repo} text={body}/></pre>}
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-muted">
-        <span className="flex items-center gap-1.5"><Avatar name={c.authorName} size="sm"/><span className="text-fg">{c.authorName}</span></span>
+        <span className="flex items-center gap-1.5"><Avatar name={c.authorName} src={c.authorAvatar === '' ? undefined : c.authorAvatar} size="sm"/><span className="text-fg">{c.authorName}</span></span>
         <Ago at={c.date}/>
         <span className="flex items-center gap-1"><Icon icon={GitCommitHorizontal} size="sm"/><Code>{c.sha}</Code></span>
         {c.parents.map((p) => <span key={p}>parent <TextLink><CodeLink owner={owner} repo={repo} to={`commit/${p}`}><Sha sha={p}/></CodeLink></TextLink></span>)}

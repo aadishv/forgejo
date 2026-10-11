@@ -8,8 +8,11 @@
 
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {observer} from 'mobx-react-lite';
-import {type KeyboardEvent, type ReactNode, useId, useState} from 'react';
+import {useRouterState} from '@tanstack/react-router';
+import {type KeyboardEvent, type ReactNode, useCallback, useId, useLayoutEffect, useRef, useState} from 'react';
 import {useShortcut, useShortcutScope} from '../../app/shortcuts/index.ts';
+import {plainClick} from '../../app/links.ts';
+import {focusList, rememberedRow, rememberRow} from '../../app/listReturn.ts';
 import {ListRow} from '../../ui/index.ts';
 import {useScrollMargin} from './Lines.tsx';
 
@@ -31,6 +34,8 @@ interface RowListProps<T> {
   onOpen: (item: T) => void;
   /** Hover or the cursor reached it (fetch what opening it needs). */
   onIntent?: ((item: T) => void) | undefined;
+  /** The row's link (an anchor: middle-click, a new tab); a plain click still calls onOpen. */
+  linkOf?: ((item: T) => string) | undefined;
   /**
    * A cursor owned by the page (the PR's file list follows the diff: one cursor, the file in view): shown
    * whether or not the list has focus; moving it calls onCursor.
@@ -39,35 +44,68 @@ interface RowListProps<T> {
   onCursor?: ((index: number) => void) | undefined;
 }
 
-function Item({id, start, active, parts, onClick, onEnter}: {id: string; start: number; active: boolean; parts: RowParts; onClick: () => void; onEnter: () => void}) {
+function Item({id, start, active, parts, href, onClick, onEnter}: {id: string; start: number; active: boolean; parts: RowParts; href: string | undefined; onClick: () => void; onEnter: () => void}) {
   return (
     <div className="absolute inset-x-0 top-0" style={{transform: `translateY(${String(start)}px)`}}>
-      <ListRow role="option" id={id} active={active} aria-selected={active} leading={parts.leading} trailing={parts.trailing} onClick={onClick} onPointerEnter={onEnter}>
+      <ListRow role="option" id={id} active={active} aria-selected={active} leading={parts.leading} trailing={parts.trailing} href={href} tabIndex={-1}
+        onClick={(e) => {
+          if (href !== undefined && !plainClick(e)) return;
+          e.preventDefault();
+          onClick();
+        }} onPointerEnter={onEnter}>
         {parts.main}
       </ListRow>
     </div>
   );
 }
 
-function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen, onIntent, cursor: owned, onCursor}: RowListProps<T>) {
+function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen: openItem, onIntent, linkOf, cursor: owned, onCursor}: RowListProps<T>) {
   const id = useId();
+  // Back on this list (Back, a breadcrumb): the cursor on the row the user opened, and the focus (as the issue lists).
+  const here = useRouterState({select: (s) => `${s.location.pathname}${s.location.searchStr}`});
+  const onOpen = (item: T) => {
+    if (owned === undefined) rememberRow(here, keyOf(item));
+    openItem(item);
+  };
   const [own, setOwn] = useState(0);
   const cursor = owned ?? own;
   const setCursor = (n: number) => {
     if (onCursor) onCursor(n);
     else setOwn(n);
   };
-  // The cursor's edge shows while the list has focus (or always, for a page-owned cursor).
+  // The cursor's edge shows while the list has focus, once J/K moved it (from anywhere on the page: the list then
+  // takes the focus, Linear), or always for a page-owned cursor.
   const [focused, setFocused] = useState(false);
-  const shown = focused || owned !== undefined;
+  const [moved, setMoved] = useState(false);
+  const shown = focused || moved || owned !== undefined;
+  const list = useRef<HTMLDivElement | null>(null);
   const [place, margin] = useScrollMargin(scroller);
+  const setList = useCallback((el: HTMLDivElement | null) => {
+    list.current = el;
+    place(el);
+  }, [place]);
   // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer re-renders this list itself (rows are not memoized)
   const v = useVirtualizer({count: items.length, getScrollElement: () => scroller, estimateSize: rowSize, overscan: 10, scrollMargin: margin});
   useShortcutScope('list');
+  const hasItems = items.length > 0;
+  useLayoutEffect(() => {
+    const back = rememberedRow(here);
+    if (owned !== undefined || back === undefined || moved) return;
+    const at = items.findIndex((it) => keyOf(it) === back);
+    if (at < 0) return;
+    setOwn(at);
+    setMoved(true);
+    v.scrollToIndex(at, {align: 'auto'});
+    focusList(list.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the rows are there
+  }, [hasItems]);
   const move = (d: number) => {
-    const n = Math.max(0, Math.min(items.length - 1, cursor + d));
+    // The first J shows the cursor where it is (the first row), the next ones move it.
+    const n = shown ? Math.max(0, Math.min(items.length - 1, cursor + d)) : cursor;
     setCursor(n);
+    setMoved(true);
     v.scrollToIndex(n);
+    list.current?.focus({preventScroll: true});
     const it = items[n];
     if (it !== undefined) onIntent?.(it);
   };
@@ -77,7 +115,13 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen, onIntent, c
   useShortcut('list.prev', () => {
     move(-1);
   });
+  // Enter also without the focus on the list, once the cursor shows (the registry's page-only Enter).
+  useShortcut('list.open', () => {
+    const it = items[cursor];
+    if (shown && it !== undefined) onOpen(it);
+  }, true, () => shown && items[cursor] !== undefined);
   const onKeyDown = (ev: KeyboardEvent) => {
+    if (ev.altKey) return;
     if (ev.key === 'ArrowDown') move(1);
     else if (ev.key === 'ArrowUp') move(-1);
     else if (ev.key === 'Enter') {
@@ -87,7 +131,7 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen, onIntent, c
     ev.preventDefault();
   };
   return (
-    <div ref={place} role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={items.length ? `${id}-${String(cursor)}` : undefined} data-shortcuts=""
+    <div ref={setList} role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={items.length ? `${id}-${String(cursor)}` : undefined} data-shortcuts=""
       onKeyDown={onKeyDown} onFocus={() => {
         setFocused(true);
       }} onBlur={() => {
@@ -97,7 +141,7 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen, onIntent, c
         const item = items[it.index];
         if (item === undefined) return null;
         return (
-          <Item key={keyOf(item)} id={`${id}-${String(it.index)}`} start={it.start - margin} active={shown && it.index === cursor} parts={row(item)}
+          <Item key={keyOf(item)} id={`${id}-${String(it.index)}`} start={it.start - margin} active={shown && it.index === cursor} parts={row(item)} href={linkOf?.(item)}
             onClick={() => {
               setCursor(it.index);
               onOpen(item);

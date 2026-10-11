@@ -12,10 +12,13 @@ import {Tooltip} from './Tooltip.tsx';
 // Sidebar rows sit on the canvas, so they use the canvas fills (plain hover
 // is too faint there). The current page is marked by aria-current="page",
 // which router links set themselves.
-const row =
-  'interactive flex h-control w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-base text-fg-muted select-none ' +
+// shrink-0: the rows keep their height in a sidebar that scrolls (it scrolls; they never squash).
+const look =
+  'interactive flex h-control min-w-0 shrink-0 items-center rounded-md text-left text-base text-fg-muted select-none ' +
   'hover:bg-canvas-hover hover:text-fg focus-visible:focus-inset aria-[current=page]:bg-canvas-selected aria-[current=page]:text-fg ' +
+  'aria-[current=true]:bg-canvas-selected aria-[current=true]:text-fg ' +
   'data-[state=open]:bg-canvas-hover data-[state=open]:text-fg';
+const row = cx(look, 'w-full gap-2 px-2');
 
 export interface NavItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'style' | 'children'> {
   /** The visible name. */
@@ -54,20 +57,34 @@ export interface NavGroupProps {
   leading?: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The group's own page (a router <Link> without children): the name opens it, the chevron folds the group. */
+  link?: ReactElement;
+  /** The current page is one of the group's rows: folded, the group's own row is marked current in its place. */
+  holdsCurrent?: boolean | undefined;
   children: ReactNode;
 }
 
 /** A collapsible group of sidebar rows (an owner and its repositories). Opens and closes instantly. */
-export function NavGroup({label, leading, open, onOpenChange, children}: NavGroupProps) {
+export function NavGroup({label, leading, open, onOpenChange, link, holdsCurrent, children}: NavGroupProps) {
+  const lead = leading && <span aria-hidden className="flex shrink-0">{leading}</span>;
+  const name = <span className="min-w-0 flex-1 truncate">{label}</span>;
+  const chevron = <Icon icon={open ? ChevronDown : ChevronRight} size="sm" className="text-fg-subtle"/>;
+  const toggle = () => {
+    onOpenChange(!open);
+  };
   return (
-    <div role="group" aria-label={label} className="flex flex-col gap-px">
-      <button type="button" aria-expanded={open} className={row} onClick={() => {
-        onOpenChange(!open);
-      }}>
-        {leading && <span aria-hidden className="flex shrink-0">{leading}</span>}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <Icon icon={open ? ChevronDown : ChevronRight} size="sm" className="text-fg-subtle"/>
-      </button>
+    <div role="group" aria-label={label} className="flex shrink-0 flex-col gap-px">
+      {/* The name is a full-width row (the geometry of every other row: its highlight spans the sidebar), the
+          chevron a button over its end. */}
+      {link ?
+        <div className="relative flex min-w-0">
+          <Slot.Root className={cx(row, 'pr-control')} {...(holdsCurrent && !open ? {'aria-current': true} : {})}>
+            <Slot.Slottable>{link}</Slot.Slottable>{lead}{name}
+          </Slot.Root>
+          <button type="button" aria-expanded={open} aria-label={open ? `Fold ${label}` : `Unfold ${label}`}
+            className={cx(look, 'absolute top-0 right-0 w-control justify-center')} onClick={toggle}>{chevron}</button>
+        </div> :
+        <button type="button" aria-expanded={open} className={row} onClick={toggle}>{lead}{name}{chevron}</button>}
       {open && children}
     </div>
   );
@@ -75,5 +92,5 @@ export function NavGroup({label, leading, open, onOpenChange, children}: NavGrou
 
 /** A small section heading in the sidebar. */
 export function NavHeading({children}: {children: string}) {
-  return <h2 className={cx(sectionLabel, 'flex h-control items-end px-2 pb-1 font-medium')}>{children}</h2>;
+  return <h2 className={cx(sectionLabel, 'flex h-control shrink-0 items-end px-2 pb-1 font-medium')}>{children}</h2>;
 }

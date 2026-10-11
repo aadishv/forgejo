@@ -67,6 +67,7 @@ const (
 	ModelComment         Model = "Comment"
 	ModelReaction        Model = "Reaction"
 	ModelReview          Model = "Review"
+	ModelReviewVerdict   Model = "ReviewVerdict"
 	ModelReviewState     Model = "ReviewState"
 	ModelAttachment      Model = "Attachment"
 	ModelIssueDependency Model = "IssueDependency"
@@ -100,14 +101,14 @@ const (
 	SchemaIssueBody       = 1
 	SchemaIssueLabel      = 1
 	SchemaIssueAssignee   = 1
-	SchemaPullRequest     = 1
+	SchemaPullRequest     = 2 // 2: status in lower case, as documented (1 sent Go's upper-case names)
 	SchemaAutoMerge       = 1
 	SchemaBranch          = 1
 	SchemaRelease         = 1
 	SchemaCommitStatus    = 1
 	SchemaActionRun       = 1
 	SchemaActionRunJob    = 1
-	SchemaNotification    = 1
+	SchemaNotification    = 2 // 2: actor_id
 	SchemaStopwatch       = 1
 	SchemaIssueWatch      = 1
 	SchemaWatch           = 1
@@ -116,6 +117,7 @@ const (
 	SchemaComment         = 1
 	SchemaReaction        = 1
 	SchemaReview          = 1
+	SchemaReviewVerdict   = 1
 	SchemaReviewState     = 1
 	SchemaAttachment      = 1
 	SchemaIssueDependency = 1

@@ -10,19 +10,25 @@
 
 import {
   Circle, CircleCheck, CircleCheckBig, CircleDashed, CircleDot, CircleDotDashed, CircleEllipsis, CircleX, GitMerge, GitPullRequest,
-  GitPullRequestClosed, OctagonAlert, SignalHigh, SignalLow, SignalMedium, SignalZero,
+  CalendarClock, createLucideIcon, GitPullRequestClosed, OctagonAlert, Pin, SignalMedium,
 } from 'lucide-react';
 import {compareStructural, computed, type IComputedValue} from 'mobx';
 import {observer} from 'mobx-react-lite';
+import type {ListCursor} from './flags.ts';
+import type {IssueListModel} from './list.ts';
 import {useApp} from '../../app/store.ts';
+import {reach} from '../../app/online.ts';
 import type {Entity} from '../../data/entity.ts';
 import type {Pool} from '../../data/pool.ts';
 import {editing} from '../../intents/session.ts';
 import type {Overlay} from '../../intents/overlay.ts';
-import {issueAssigneeIds, issueLabelIds, issueMilestone, issueState, issueTitle} from '../../intents/view.ts';
+import {issueAssigneeIds, issueDeadline, issueLabelIds, issueMilestone, issuePinned, issueState, issueTitle} from '../../intents/view.ts';
 import type {Label} from '../../protocol/types.gen.ts';
-import {Avatar, AvatarGroup, Hint, Icon, LabelChip, LabelIcon, type LucideIcon, PendingIcon} from '../../ui/index.ts';
-import {ago, fullDate} from './format.ts';
+import {Avatar, AvatarGroup, Badge, Hint, Icon, LabelChip, LabelIcon, type LucideIcon, PendingIcon, TextLink} from '../../ui/index.ts';
+import {Link} from '@tanstack/react-router';
+import {ago, fullDate, shortDate} from './format.ts';
+import {poolHead} from '../../code/pull.ts';
+import {checksOf} from '../pull/checks.ts';
 import {kindRank, labelKind, scopedValue, statusStage, type StatusStage} from './labels.ts';
 
 export function usePool(): Pool {
@@ -91,7 +97,22 @@ export function statusIcon(name: string): LucideIcon {
   return stage ? STAGE_ICONS[stage] : Circle;
 }
 
-const PRIORITY_ICONS: LucideIcon[] = [OctagonAlert, SignalHigh, SignalMedium, SignalLow, SignalZero];
+/**
+ * Priority as bars (Linear's look): the filled bars say the level, the others stay faint, so Low is one bar
+ * of three rather than lucide's lone short bar (which reads as a stray mark at 16 px).
+ */
+function bars(name: string, filled: number): LucideIcon {
+  const bar = (i: number) => ['rect', {
+    x: String(3 + i * 7), y: String(14 - i * 5), width: '4', height: String(6 + i * 5), rx: '1', fill: 'currentColor', stroke: 'none',
+    ...(i < filled ? {} : {opacity: '0.3'}), key: `b${String(i)}`,
+  }] as [string, Record<string, string>];
+  return createLucideIcon(name, [bar(0), bar(1), bar(2)]);
+}
+
+/** No priority: the three bars, all faint (lucide's SignalZero is a lone dot, a stray mark in a menu). */
+export const NoPriorityIcon = bars('priority-none', 0);
+
+const PRIORITY_ICONS: LucideIcon[] = [OctagonAlert, bars('priority-high', 3), bars('priority-medium', 2), bars('priority-low', 1), NoPriorityIcon];
 
 export function priorityIcon(name: string): LucideIcon {
   return PRIORITY_ICONS[Math.min(4, Math.max(0, Math.round(kindRank('priority', name))))] ?? SignalMedium;
@@ -141,7 +162,8 @@ export const StateIcon = observer(function StateIcon({issue}: {issue: Entity<'Is
 export const StatusCell = observer(function StatusCell({issue}: {issue: Entity<'Issue'>}) {
   const {status} = useLabelView(issue);
   const open = issueState(useOverlay(), issue) === 'open';
-  if (!status || (!open && !terminal(status.name))) return <StateIcon issue={issue}/>;
+  // A pull request always reads as one (open, draft, merged, closed): its review and checks say where it is.
+  if (!status || issue.get('is_pull') || (!open && !terminal(status.name))) return <StateIcon issue={issue}/>;
   return (
     <Hint label={scopedValue(status.name)}><LabelIcon icon={statusIcon(status.name)} color={status.color}/></Hint>
   );
@@ -178,6 +200,16 @@ export function useUser(id: number): {name: string; login: string; avatar: strin
   return {name: firstOf(full, login, `User ${String(id)}`), login, avatar: avatar === '' ? undefined : avatar};
 }
 
+/**
+ * A person's name, a link to their page here (the owner page) when their login is known; `fallback` for
+ * someone not on this device (an imported comment's original author).
+ */
+export const UserName = observer(function UserName({id, fallback = 'Someone'}: {id: number; fallback?: string}) {
+  const u = useUser(id);
+  if (!id || !u.login) return <span className="font-medium text-fg">{id ? u.name : fallback}</span>;
+  return <span className="font-medium"><TextLink wrap><Link to="/$owner" params={{owner: u.login}} activeOptions={{exact: true}}>{u.name}</Link></TextLink></span>;
+});
+
 export const UserAvatar = observer(function UserAvatar({id, size = 'sm'}: {id: number; size?: 'sm' | 'md' | 'lg'}) {
   const u = useUser(id);
   return <Avatar name={u.name} src={u.avatar} size={size}/>;
@@ -201,10 +233,88 @@ export const MilestoneName = observer(function MilestoneName({issue}: {issue: En
   return title ? <span className="truncate">{title}</span> : null;
 });
 
+/** The due date in a row ("Oct 1"), in the danger tone when it has passed and the issue is open; nothing without one. */
+export const DueCell = observer(function DueCell({issue}: {issue: Entity<'Issue'>}) {
+  const overlay = useOverlay();
+  const due = issueDeadline(overlay, issue);
+  if (!due) return null;
+  const late = issueState(overlay, issue) === 'open' && Date.parse(due) < Date.now();
+  return (
+    <span title={`Due ${fullDate(due)}${late ? ' (overdue)' : ''}`} className={late ? 'flex items-center gap-1 whitespace-nowrap text-danger' : 'flex items-center gap-1 whitespace-nowrap'}>
+      <Icon icon={CalendarClock} size="sm"/>{shortDate(due)}
+    </span>
+  );
+});
+
+/** Forgejo's default work-in-progress title prefixes (setting.Repository.PullRequest.WorkInProgressPrefixes). */
+const WIP = /^\s*(?:WIP:|\[WIP\])/i;
+
+/** Whether a pull request is a draft (its title starts with a work-in-progress prefix, as Forgejo decides). */
+export function isDraft(title: string): boolean {
+  return WIP.test(title);
+}
+
+const CHECK_ICON = {success: CircleCheck, failure: CircleX, pending: CircleDotDashed} as const;
+const CHECK_TONE = {success: 'text-success', failure: 'text-danger', pending: 'text-warning'} as const;
+const CHECK_LABEL = {success: 'Checks passed', failure: 'Checks failed', pending: 'Checks running'} as const;
+
+/**
+ * A pull request's state in a row: draft, its checks at the head (as the merge box sums them), and the reviews'
+ * verdict (changes requested wins over approved; each reviewer's latest review counts). Nothing for an issue.
+ */
+export const PullStateCell = observer(function PullStateCell({issue}: {issue: Entity<'Issue'>}) {
+  const pool = usePool();
+  const overlay = useOverlay();
+  if (!issue.get('is_pull')) return null;
+  const draft = isDraft(issueTitle(overlay, issue));
+  const pr = [...pool.model('PullRequest').by('issue_id', issue.id)][0]?.data;
+  const head = pr && !pr.merged ? poolHead(pool, pr) : undefined;
+  const checks = pr && head ? checksOf(pool, pr, head).summary : 'none';
+  // The verdicts come with the repository (ReviewVerdict), not only once the pull request was opened (its Reviews).
+  const latest = new Map<number, string>();
+  for (const r of [...pool.model('ReviewVerdict').by('issue_id', issue.id)].map((e) => e.data).sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    if (!r.reviewer_id || r.dismissed) continue;
+    latest.set(r.reviewer_id, r.state);
+  }
+  const verdicts = [...latest.values()];
+  const review = verdicts.includes('REQUEST_CHANGES') ? 'changes' : verdicts.includes('APPROVED') ? 'approved' : undefined;
+  return (
+    <>
+      {draft && <Badge>Draft</Badge>}
+      {review === 'changes' && <Badge tone="danger">Changes requested</Badge>}
+      {review === 'approved' && <Badge tone="success">Approved</Badge>}
+      {checks !== 'none' && <Hint label={CHECK_LABEL[checks]}><Icon icon={CHECK_ICON[checks]} size="sm" className={CHECK_TONE[checks]}/></Hint>}
+    </>
+  );
+});
+
+/** A pinned issue's mark in a row (pinned to its repository's list). */
+export const PinCell = observer(function PinCell({issue}: {issue: Entity<'Issue'>}) {
+  return issuePinned(useOverlay(), issue) ? <Hint label="Pinned"><Icon icon={Pin} size="sm"/></Hint> : null;
+});
+
 /** When the issue was last updated, compact ("3d"), with the full date on hover. */
 export const UpdatedCell = observer(function UpdatedCell({issue}: {issue: Entity<'Issue'>}) {
   return <AgoCell at={issue.get('updated_at')} label="Updated"/>;
 });
+
+/**
+ * An issue's reference in a row's trailing slot ("acme/atlas#12"); on a phone the number only, so the title
+ * keeps its room.
+ */
+export function RefCell({repo, number}: {repo: string; number: number | undefined}) {
+  const ref = number === undefined ? '' : `#${String(number)}`;
+  // At phone width the owner goes and the repository's name stays (truncated): atlas#12 and design-system#12 must
+  // still look different (QA round 2).
+  const slash = repo.indexOf('/') + 1;
+  return (
+    <span title={repo ? `${repo}${ref}` : undefined} className="flex min-w-0 tabular-nums">
+      {repo && <span className="max-md:hidden">{repo.slice(0, slash)}</span>}
+      {repo && <span className="truncate max-md:max-w-24">{repo.slice(slash)}</span>}
+      <span className="shrink-0">{ref}</span>
+    </span>
+  );
+}
 
 /** A compact time in a row's trailing slot ("3d"), the full date on hover. */
 export function AgoCell({at, label}: {at: string; label?: string}) {
@@ -220,9 +330,27 @@ export const TitleCell = observer(function TitleCell({issue}: {issue: Entity<'Is
  * have yet. Observes the issue's pending count only.
  */
 export const PendingCell = observer(function PendingCell({issueId}: {issueId: number}) {
-  const n = editing(useApp()).intents.pendingOn(issueId);
+  const app = useApp();
+  const n = editing(app).intents.pendingOn(issueId);
   if (!n) return null;
-  return <PendingIcon label={`${String(n)} ${n === 1 ? 'change' : 'changes'} not synced yet`}/>;
+  return <PendingIcon label={`${String(n)} ${n === 1 ? 'change' : 'changes'} not synced yet`} now={reach(app.session?.data.status.connection) !== 'online'}/>;
+});
+
+/** How many rows of a list are selected (X), with the way out; nothing without a selection (lists, the inbox). */
+export const SelectionCount = observer(function SelectionCount({cursor}: {cursor: ListCursor}) {
+  const n = cursor.selected.size;
+  return n > 0 ? <Badge tone="accent">{n} selected · Esc clears</Badge> : null;
+});
+
+/** How many rows a narrowed list shows (a search or a filter is in effect): the list itself says nothing of it. */
+export const ResultCount = observer(function ResultCount({model}: {model: IssueListModel}) {
+  const f = model.query.filter;
+  const narrowed = f.q !== undefined || f.labels.length > 0 || f.assignee !== undefined || f.poster !== undefined || f.milestone !== undefined ||
+    f.status !== undefined || f.priority !== undefined || f.label !== undefined || f.repo !== undefined;
+  if (!narrowed) return null;
+  const n = model.result.get().ids.length;
+  // Plain text: a chip beside the state buttons read as one more of them, pressed (QA verify3).
+  return <span className="text-sm whitespace-nowrap text-fg-subtle tabular-nums">{n === 1 ? '1 result' : `${String(n)} results`}</span>;
 });
 
 /** The first non-empty string. */

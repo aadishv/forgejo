@@ -8,7 +8,7 @@
 // contents, file names and logs never reach an HTML sink.
 
 import {Slot} from 'radix-ui';
-import type {ReactElement, ReactNode, Ref} from 'react';
+import {type ReactElement, type ReactNode, type Ref, useLayoutEffect, useRef} from 'react';
 import {cx} from './cx.ts';
 
 /** Syntax classes by token class (workers/highlight.ts SYN): plain, keyword, string, comment, function, constant, parameter, punctuation, link. */
@@ -45,6 +45,40 @@ export function CodeTokens({text, hl, line}: {text: string; hl?: TokenSpans | nu
   return out;
 }
 
+/**
+ * Highlights a code block of rendered markdown in place (a fenced block in an issue): its text becomes
+ * text nodes inside spans of the same syntax classes as files and diffs (never markup). `hl` covers the
+ * block's lines (the block's text split at "\n").
+ */
+export function paintTokens(el: HTMLElement, hl: TokenSpans): void {
+  const lines = el.textContent.split('\n');
+  const out = document.createDocumentFragment();
+  lines.forEach((text, line) => {
+    if (line > 0) out.append('\n');
+    const from = hl.starts[line];
+    const to = hl.starts[line + 1];
+    if (from === undefined || to === undefined) {
+      out.append(text);
+      return;
+    }
+    let at = 0;
+    for (let k = from; k < to; k++) {
+      const len = hl.spans[2 * k] ?? 0;
+      const cls = SYN[hl.spans[2 * k + 1] ?? 0] ?? '';
+      const part = text.slice(at, at + len);
+      at += len;
+      if (cls) {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = part;
+        out.append(span);
+      } else out.append(part);
+    }
+    if (at < text.length) out.append(text.slice(at));
+  });
+  el.replaceChildren(out);
+}
+
 /** A log line's ANSI spans (code/ansi.ts). */
 export function AnsiText({spans}: {spans: readonly {text: string; color: number; bold: boolean}[]}) {
   return spans.map((s, i) => (s.color || s.bold ? <span key={i} className={cx(ANSI[s.color], s.bold && 'font-semibold')}>{s.text}</span> : s.text));
@@ -59,10 +93,14 @@ export interface CodeLineProps {
   /** The gutter: line numbers (LineNo), a blame cell, … */
   gutter: ReactNode;
   tone?: LineTone | undefined;
-  /** The line under the keyboard cursor or linked to (#L12): an accent edge. */
+  /** The line under the keyboard cursor or linked to (#L12): an accent edge (drawn on the gutter, over the text). */
   active?: boolean | undefined;
-  /** After the text (a comment button, a pending mark). */
+  /** A line a link names (#L12, #L12-L20): tinted, gutter and text. */
+  linked?: boolean | undefined;
+  /** After the text (a pending mark, a hunk's Expand). */
   trailing?: ReactNode;
+  /** In the gutter, at its right edge (LineAction): on screen however long the line is. */
+  action?: ReactNode;
   children: ReactNode;
   ref?: Ref<HTMLDivElement>;
   /** For tests and for links to a line (#L12). */
@@ -72,13 +110,19 @@ export interface CodeLineProps {
 /**
  * One line of code: a fixed-height row (h-line). Wide lines widen the row
  * (w-max), so the page scrolls horizontally rather than wrapping; the gutter
- * scrolls with the text (a sticky gutter per line cost scroll frames).
+ * (line numbers, the diff's +/− tint) stays at the left edge while the text
+ * scrolls under it (sticky; positioned, so it paints over the text without a
+ * z-index). Only the rows in view exist (virtualized), so few gutters stick.
  */
-export function CodeLine({gutter, tone = 'none', active, trailing, children, ref, id}: CodeLineProps) {
+export function CodeLine({gutter, tone = 'none', active, linked, trailing, action, children, ref, id}: CodeLineProps) {
   return (
-    <div ref={ref} id={id} data-active={active ? '' : undefined}
-      className={cx('group row-cursor flex h-line w-max min-w-full font-mono text-code contain-layout', lineTone[tone])}>
-      <span className={cx('flex shrink-0', gutterTone[tone])}>{gutter}</span>
+    <div ref={ref} id={id} data-active={active ? '' : undefined} data-linked={linked ? '' : undefined}
+      className={cx('group flex h-line w-max min-w-full font-mono text-code contain-layout', linked ? 'bg-selected text-fg' : lineTone[tone])}>
+      {/* The cursor's edge is the gutter's own (sticky, it would cover an edge drawn on the row). */}
+      <span data-active={active ? '' : undefined} className={cx('row-cursor sticky left-0 flex shrink-0', linked ? 'bg-selected' : gutterTone[tone])}>
+        {gutter}
+        {action && <span className="absolute inset-y-0 right-0 flex items-center">{action}</span>}
+      </span>
       <span className="code-text pr-6 pl-3">{children}</span>
       {trailing}
     </div>
@@ -86,10 +130,12 @@ export function CodeLine({gutter, tone = 'none', active, trailing, children, ref
 }
 
 /**
- * A small "+" action at the end of a code line (comment on this line), shown
- * on the line's hover or focus. Deliberately plain — no tooltip machinery, no
- * SVG, not sticky: a diff mounts one per line as it scrolls (measured: those
- * cost frames). Its label is its accessible name and title.
+ * A small "+" action in a code line's gutter (comment on this line: CodeLine's
+ * `action`), shown on the line's hover or focus; the gutter is sticky, so it is
+ * on screen however long the line (QA verify3: at the end of the text it went
+ * off screen). Deliberately plain — no tooltip machinery, no SVG: a diff mounts
+ * one per line as it scrolls (measured: those cost frames). Its label is its
+ * accessible name and title.
  */
 export function LineAction({label, onClick}: {label: string; onClick: () => void}) {
   return (
@@ -103,17 +149,26 @@ export function LineAction({label, onClick}: {label: string; onClick: () => void
   );
 }
 
-/** A line number cell (empty for 0: the other side of an added or removed line). */
-export function LineNo({n}: {n: number}) {
+/**
+ * A line number cell (empty for 0: the other side of an added or removed line). With `onPick` it is a link to the
+ * line (#L12): a click names the line, Shift+click a range from the line named before (GitHub, classic).
+ */
+export function LineNo({n, onPick}: {n: number; onPick?: ((n: number, range: boolean) => void) | undefined}) {
+  const cls = 'w-gutter shrink-0 pr-2 text-right text-fg-subtle tabular-nums select-none';
+  if (!onPick || n <= 0) return <span className={cls}>{n > 0 ? n : ''}</span>;
   return (
-    <span className="w-gutter shrink-0 pr-2 text-right text-fg-subtle tabular-nums select-none">{n > 0 ? n : ''}</span>
+    <a href={`#L${String(n)}`} aria-label={`Line ${String(n)}`} className={cx(cls, 'cursor-pointer hover:text-fg')} onClick={(e) => {
+      if (e.metaKey || e.ctrlKey || e.button !== 0) return;
+      e.preventDefault();
+      onPick(n, e.shiftKey);
+    }}>{n}</a>
   );
 }
 
 /** The blame column of a line: the commit's summary and age on the first line of a part, empty below it. */
 export function BlameCell({first, summary, meta, children}: {first: boolean; summary?: string | undefined; meta?: string | undefined; children?: ReactNode}) {
   return (
-    <span className={cx('flex w-blame shrink-0 items-center gap-2 overflow-hidden border-r border-border-subtle px-2 font-sans text-sm text-fg-muted', first && 'border-t')}>
+    <span className={cx('flex w-blame-narrow shrink-0 items-center gap-2 overflow-hidden border-r @xl:w-blame border-border-subtle px-2 font-sans text-sm text-fg-muted', first && 'border-t')}>
       {first && <>
         <span className="min-w-0 flex-1 truncate">{children ?? summary}</span>
         {meta && <span className="shrink-0 text-fg-subtle tabular-nums">{meta}</span>}
@@ -175,9 +230,21 @@ export function CodeFileHeader({path, oldPath, status, stat, leading, children, 
   );
 }
 
-/** A tab bar of links (a repository's sections, a pull request's views). Put TabLink children in it. */
+/**
+ * A tab bar of links (a repository's sections, a pull request's views). Put TabLink children in it. On a narrow
+ * screen it scrolls sideways, and the current tab is scrolled into it (a page opened from a tab far right showed
+ * the strip from its start, without the tab).
+ */
 export function TabNav({label, children}: {label: string; children: ReactNode}) {
-  return <nav aria-label={label} className="flex h-header shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-4">{children}</nav>;
+  const nav = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = nav.current;
+    const tab = el?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!el || !tab || el.scrollWidth <= el.clientWidth) return;
+    const left = tab.offsetLeft - el.offsetLeft;
+    if (left < el.scrollLeft || left + tab.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = left - (el.clientWidth - tab.offsetWidth) / 2;
+  });
+  return <nav ref={nav} aria-label={label} className="flex h-header shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-4">{children}</nav>;
 }
 
 /** One tab: wraps a router <Link>, which sets aria-current="page" on the active route. */

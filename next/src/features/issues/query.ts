@@ -29,6 +29,13 @@ export interface Filter {
   milestone?: number | undefined;
   /** Words that must all be in the title, or "#12" / "12" for a number. */
   q?: string | undefined;
+  /** A status and a priority by value (their labels' value, compared without case), in any repository. */
+  status?: string | undefined;
+  priority?: string | undefined;
+  /** A label by name (compared without case), in any repository. */
+  label?: string | undefined;
+  /** One repository. */
+  repo?: number | undefined;
 }
 
 export interface Query {
@@ -46,6 +53,11 @@ export interface QueryContext {
   milestoneOf(id: number): Milestone | undefined;
   userName(id: number): string | undefined;
   repo(id: number): Repository | undefined;
+  /**
+   * The issue's place among its repository's pinned issues (1, 2, …; 0: not pinned). Given for a repository's
+   * list: pinned issues come first in their group, in their pinned order (as the classic list shows them).
+   */
+  pin?: ((i: Issue) => number) | undefined;
 }
 
 export type Row =
@@ -60,6 +72,8 @@ export interface QueryResult {
 
 interface Item {
   issue: Issue;
+  /** Pinned order (0: not pinned). */
+  pin: number;
   sortKey: number;
   group: GroupKey | undefined;
   /** The group's place among the run's groups (set before sorting). */
@@ -113,6 +127,7 @@ export function parseSearch(q: string | undefined): {words: string[]; number: nu
 export function runQuery(candidates: Iterable<Issue>, query: Query, ctx: QueryContext): QueryResult {
   const {filter, sort, group} = query;
   const search = parseSearch(filter.q);
+  const labelName = filter.label?.toLowerCase();
   const must = filter.labels.filter((l) => l > 0);
   const mustNot = filter.labels.filter((l) => l < 0).map((l) => -l);
   const items: Item[] = [];
@@ -121,6 +136,8 @@ export function runQuery(candidates: Iterable<Issue>, query: Query, ctx: QueryCo
     const state = ctx.state(issue);
     if (filter.state !== 'all' && state !== filter.state) continue;
     if (filter.poster !== undefined && issue.poster_id !== filter.poster) continue;
+    if (filter.repo !== undefined && issue.repo_id !== filter.repo) continue;
+    if (labelName !== undefined && !ctx.labels(issue).some((id) => ctx.label(id)?.name.toLowerCase() === labelName)) continue;
     if (filter.milestone !== undefined) {
       const m = ctx.milestone(issue);
       if (filter.milestone === -1 ? m !== 0 : m !== filter.milestone) continue;
@@ -134,7 +151,9 @@ export function runQuery(candidates: Iterable<Issue>, query: Query, ctx: QueryCo
       if (filter.assignee === -1 ? as.length > 0 : !as.includes(filter.assignee)) continue;
     }
     if (search.words.length && !matches(issue, search)) continue;
-    items.push({issue, sortKey: sortKey(issue, sort, run), group: group === 'none' ? undefined : groupOf(issue, group, state, run), order: 0});
+    if (filter.status !== undefined && !hasValue(issue, 'status', filter.status, run)) continue;
+    if (filter.priority !== undefined && !hasValue(issue, 'priority', filter.priority, run)) continue;
+    items.push({issue, pin: ctx.pin?.(issue) ?? 0, sortKey: sortKey(issue, sort, run), group: group === 'none' ? undefined : groupOf(issue, group, state, run), order: 0});
   }
   // The groups are ordered once (a handful of them), then the sort compares numbers only.
   if (group !== 'none') {
@@ -148,6 +167,9 @@ export function runQuery(candidates: Iterable<Issue>, query: Query, ctx: QueryCo
   const desc = sort === 'newest' || sort === 'recentupdate' || sort === 'mostcomment' || sort === 'farduedate';
   items.sort((a, b) => {
     if (a.order !== b.order) return a.order - b.order;
+    // Pinned first (by their pinned order), then the sort.
+    if ((a.pin > 0) !== (b.pin > 0)) return a.pin > 0 ? -1 : 1;
+    if (a.pin !== b.pin) return a.pin - b.pin;
     const x = a.sortKey;
     const y = b.sortKey;
     // Missing values (no due date) go last either way.
@@ -172,10 +194,45 @@ export function runQuery(candidates: Iterable<Issue>, query: Query, ctx: QueryCo
   return {rows, ids};
 }
 
+/** Whether the issue's status (priority) label has this value. */
+function hasValue(issue: Issue, kind: ScopeKind, value: string, run: Run): boolean {
+  const k = runKindLabel(issue, kind, run);
+  return k !== undefined && scopedValue(k.label.name).toLowerCase() === value.toLowerCase();
+}
+
 function matches(issue: Issue, s: {words: string[]; number: number | undefined}): boolean {
   if (s.number !== undefined && issue.number === s.number) return true;
   const title = issue.title.toLowerCase();
-  return s.words.every((w) => title.includes(w.replace(/^#/, '')) || `#${String(issue.number)}` === w);
+  return s.words.every((w) => title.includes(w.replace(/^#/, '')) || `#${String(issue.number)}` === w || nearWord(title, w));
+}
+
+/**
+ * A typo (the ⌘K palette forgives them, so the lists do too): a word of 4 letters or more that is one edit — a
+ * letter missing, extra, wrong or two swapped — from the start of a word of the title ("vectr" finds "vector").
+ */
+export function nearWord(title: string, w: string): boolean {
+  if (w.length < 4) return false;
+  for (const t of title.split(/[^\p{L}\p{N}]+/u)) {
+    if (t.length < w.length - 1) continue;
+    // The word as typed against the title word's start of the same length, one longer and one shorter.
+    for (const n of [w.length, w.length + 1, w.length - 1]) {
+      if (n <= t.length && oneEdit(w, t.slice(0, n))) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether a and b are at most one edit apart (Damerau: a swap of neighbours counts as one). */
+function oneEdit(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) {
+    if (a.slice(i + 1) === b.slice(i + 1)) return true;
+    return a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);
+  }
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
 }
 
 function sortKey(issue: Issue, sort: Sort, run: Run): number {
@@ -243,6 +300,8 @@ const NO_PRIORITY: GroupKey = {key: 'none', label: 'No priority', rank: 9, name:
 const UNASSIGNED: GroupKey = {key: 'none', label: 'Unassigned', rank: 1, name: '', value: 0};
 const NO_MILESTONE: GroupKey = {key: 'none', label: 'No milestone', rank: Number.MAX_SAFE_INTEGER, name: '', value: 0};
 const NONE: GroupKey = {key: '', label: '', rank: 0, name: '', value: 0};
+/** Milestone group ranks: a tier (open/closed, dated/undated) apart, beyond any due date (ms). */
+const MILESTONE_TIER = 1e15;
 
 function groupOf(issue: Issue, group: Group, state: string, run: Run): GroupKey {
   const {ctx} = run;
@@ -276,9 +335,11 @@ function groupOf(issue: Issue, group: Group, state: string, run: Run): GroupKey 
       const m = id ? ctx.milestoneOf(id) : undefined;
       if (!m) return NO_MILESTONE;
       return interned(run, m.id, () => {
-        // Milestones with a due date first, soonest first (a cycle, PLAN §7.3).
+        // Open milestones first, those with a due date soonest first (the current cycle on top, PLAN §7.3), then the
+        // open ones without a date, then the closed ones (QA verify3: a closed "Cycle 13" came before "Cycle 14").
         const due = time(m.due_on);
-        return {key: `m${String(m.id)}`, label: m.title, rank: Number.isNaN(due) ? Number.MAX_SAFE_INTEGER - 1 : due, name: m.title.toLowerCase(), value: m.id};
+        const tier = (m.state === 'closed' ? 2 : 0) + (Number.isNaN(due) ? 1 : 0);
+        return {key: `m${String(m.id)}`, label: m.title, rank: tier * MILESTONE_TIER + (Number.isNaN(due) ? 0 : due), name: m.title.toLowerCase(), value: m.id};
       });
     }
     case 'repo': {

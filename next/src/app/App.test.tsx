@@ -58,7 +58,7 @@ function signedIn() {
   s.data.put('Repository', 'repo:21', repo(21, acme, 'api'));
   s.data.put('Issue', 'repo:20', issue(100, 20, 7, 'Footer links are broken'));
   s.data.put('Issue', 'repo:10', issue(101, 10, 1, 'Crash when saving settings'));
-  s.data.put('Notification', 'user:1', {id: 1, user_id: 1, repo_id: 20, status: 'unread', subject: 'issue', issue_id: 100, comment_id: 0, created_at: '', updated_at: ''});
+  s.data.put('Notification', 'user:1', {id: 1, user_id: 1, repo_id: 20, status: 'unread', subject: 'issue', issue_id: 100, comment_id: 0, actor_id: 0, created_at: '', updated_at: ''});
   return s;
 }
 
@@ -83,8 +83,12 @@ describe('boot', () => {
     shell.innerHTML = renderToStaticMarkup(<BootShell/>);
     const {container} = await renderApp(path, undefined, config(true));
     const panel = shell.querySelector('.logged-out\\:flex');
-    // The boot copy is hidden unless the splash says logged-out; otherwise identical.
-    expect(panel?.outerHTML.replace('hidden logged-out:flex', 'flex')).toBe(container.firstElementChild?.outerHTML);
+    // The boot copy is hidden unless the splash says logged-out; otherwise identical, but for the classic links'
+    // addresses (the app knows them): the first frame keeps their place, invisible.
+    const links = / invisible" aria-hidden="true"/;
+    expect(panel?.outerHTML).toMatch(links);
+    expect(panel?.outerHTML.replace('hidden logged-out:flex', 'flex').replace(links, '"'))
+      .toBe(container.firstElementChild?.outerHTML.replace(/<a href="[^"]*"/g, '<a'));
   });
 
   test('without OAuth2 on the server, signing in is unavailable (and says so)', async () => {
@@ -93,9 +97,9 @@ describe('boot', () => {
     expect(screen.getByText('Signing in is not available on this server.')).toBeTruthy();
   });
 
-  test('unknown paths below the base: not found', async () => {
+  test('unknown paths below the base: the shell (signed out: sign in)', async () => {
     await renderApp('/-/next/no/such/page');
-    expect(screen.getByText('Not available here')).toBeTruthy();
+    expect(screen.getByRole('button', {name: 'Sign in'})).toBeTruthy();
   });
 
   test('the gallery route is available in dev', async () => {
@@ -117,21 +121,73 @@ describe('signed in', () => {
     // The viewer first, then the organizations; repositories by name.
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['alice', 'acme']);
     const acme = within(sidebar).getByRole('group', {name: 'acme'});
-    expect(within(acme).getAllByRole('link').map((a) => a.textContent)).toEqual(['api', 'website']);
-    expect(within(acme).getByRole('link', {name: 'website'}).getAttribute('href')).toBe('/acme/website/issues');
+    // The owner's name opens its page; its repositories follow.
+    expect(within(acme).getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual(['/acme', '/acme/api', '/acme/website']);
+    expect(within(sidebar).getByRole('link', {name: 'Home'}).getAttribute('aria-current')).toBe('page');
+    expect(within(acme).getByRole('link', {name: 'website'}).getAttribute('href')).toBe('/acme/website');
     expect(screen.getByRole('heading', {name: 'Home'})).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('Live');
     expect(classConflicts(document.body)).toEqual([]);
   });
 
+  test('home lists what is waiting: unread notifications, as links, with the full list a click away', async () => {
+    const s = signedIn();
+    await renderApp('/', s);
+    const unread = await screen.findByRole('region', {name: 'Unread'});
+    const row = within(unread).getByRole('link', {name: /Footer links are broken/});
+    expect(row.getAttribute('href')).toBe('/acme/website/issues/7');
+    expect(row.textContent).toContain('acme/website#7');
+    expect(within(unread).getByRole('link', {name: 'View all'}).getAttribute('href')).toBe('/notifications?filter=unread');
+    expect(classConflicts(document.body)).toEqual([]);
+  });
+
+  test('an unknown address keeps the shell and offers the classic page', async () => {
+    const s = signedIn();
+    await renderApp('/-/next/acme/website/settings', s);
+    expect(screen.getByRole('complementary', {name: 'Sidebar'})).toBeTruthy();
+    // The classic UI has the page: "Not available here" (a page nobody has is "Not found").
+    expect(screen.getByRole('heading', {name: 'Not available here'})).toBeTruthy();
+    expect((await screen.findByRole('link', {name: /Open this page/})).getAttribute('href')).toBe('/acme/website/settings');
+    expect(screen.getByRole('link', {name: /Go to Home/})).toBeTruthy();
+  });
+
+  test('a repository\'s address below the base is its home; the sidebar marks it on all its pages', async () => {
+    const s = signedIn();
+    const {router} = await renderApp('/-/next/acme/website/', s);
+    expect(router.state.location.pathname).toBe('/acme/website');
+    const sidebar = screen.getByRole('complementary', {name: 'Sidebar'});
+    expect(within(sidebar).getByRole('link', {name: 'website'}).getAttribute('aria-current')).toBe('page');
+    // The repository header: the owner and the repository are links, the tabs lead everywhere.
+    const crumbs = screen.getByRole('navigation', {name: 'Breadcrumb'});
+    expect(within(crumbs).getByRole('link', {name: 'acme'}).getAttribute('href')).toBe('/acme');
+    const tabs = screen.getByRole('navigation', {name: 'Repository'});
+    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Overview', 'Issues', 'Pull requests', 'Code', 'Commits', 'Branches', 'Tags', 'Releases', 'Actions']);
+    expect(within(tabs).getByRole('link', {name: 'Overview'}).getAttribute('aria-current')).toBe('page');
+    await router.navigate({to: '/$owner/$repo/issues', params: {owner: 'acme', repo: 'website'}});
+    await waitFor(() => {
+      expect(within(screen.getByRole('navigation', {name: 'Repository'})).getByRole('link', {name: 'Issues'}).getAttribute('aria-current')).toBe('page');
+    });
+    expect(within(sidebar).getByRole('link', {name: 'website'}).getAttribute('aria-current')).toBe('page');
+  });
+
+  test('a repository\'s code address (spaRoutes {code}) opens the app\'s code view; a pull request\'s Files its tab', async () => {
+    const s = signedIn();
+    const code = await renderApp('/acme/website/src/branch/main/README.md', s);
+    expect(code.router.state.location.pathname).toBe('/-/next/code/acme/website/src/branch/main/README.md/-');
+    code.unmount();
+    const files = await renderApp('/acme/website/pulls/3/files', s);
+    expect(files.router.state.location.pathname).toBe('/acme/website/pulls/3');
+    expect(files.router.state.location.search).toEqual({tab: 'files'});
+  });
+
   test('a collapsed owner stays collapsed (persisted)', async () => {
     const s = signedIn();
     const first = await renderApp('/', s);
-    fireEvent.click(screen.getByRole('button', {name: 'acme'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Fold acme'}));
     expect(screen.queryByRole('link', {name: 'website'})).toBeNull();
     first.unmount();
     await renderApp('/', s);
-    expect(screen.getByRole('button', {name: 'acme'}).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('button', {name: 'Unfold acme'}).getAttribute('aria-expanded')).toBe('false');
   });
 
   test('G then I/P/N navigate; typing in a field does not', async () => {
@@ -162,7 +218,7 @@ describe('signed in', () => {
     const {router, app} = await renderApp('/', signedIn());
     key('k', {ctrlKey: true});
     expect(app.ui.paletteOpen).toBe(true);
-    const input = await screen.findByPlaceholderText('Search repositories, issues and commands…');
+    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
     fireEvent.change(input, {target: {value: 'footer'}});
     const option = await screen.findByRole('option', {name: /Footer links are broken/});
     expect(option.textContent).toContain('acme/website#7');
@@ -176,12 +232,48 @@ describe('signed in', () => {
     expect(performance.getEntriesByName('palette:search').length).toBeGreaterThan(0);
   });
 
+  test('the palette selects its first row (never Sign out), and an exact reference first', async () => {
+    await renderApp('/', signedIn());
+    key('k', {ctrlKey: true});
+    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    const selected = () => document.querySelector('[cmdk-item][data-selected="true"]')?.textContent ?? '';
+    // Never by default; typed out by name, Enter runs it (signing out still asks when changes are unsynced).
+    fireEvent.change(input, {target: {value: 'sign'}});
+    await waitFor(() => {
+      expect(screen.getByRole('option', {name: /Sign out/})).toBeTruthy();
+    });
+    expect(selected()).not.toContain('Sign out');
+    fireEvent.change(input, {target: {value: 'sign out'}});
+    await waitFor(() => {
+      expect(selected()).toContain('Sign out');
+    });
+    fireEvent.change(input, {target: {value: 'dark theme'}});
+    await waitFor(() => {
+      expect(selected()).toContain('Switch to the dark theme');
+    });
+    fireEvent.change(input, {target: {value: 'website#7'}});
+    await waitFor(() => {
+      expect(selected()).toContain('Footer links are broken');
+    });
+    // A command that cannot run here is listed with the reason (Enter says it, and never opens something else).
+    fireEvent.change(input, {target: {value: 'go to the code'}});
+    await waitFor(() => {
+      expect(selected()).toContain('Go to the code');
+    });
+    expect(selected()).toContain('Open a repository first');
+    // A command named by an alias comes before titles that merely contain its words.
+    fireEvent.change(input, {target: {value: 'new issue'}});
+    await waitFor(() => {
+      expect(selected()).toContain('Create an issue');
+    });
+  });
+
   test('closing the palette gives focus back to where it was', async () => {
     await renderApp('/', signedIn());
     const issues = screen.getByRole('link', {name: /My issues/});
     issues.focus();
     key('k', {ctrlKey: true});
-    const input = await screen.findByPlaceholderText('Search repositories, issues and commands…');
+    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
     await waitFor(() => {
       expect(document.activeElement).toBe(input);
     });
@@ -189,6 +281,26 @@ describe('signed in', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(issues);
     });
+  });
+
+  test('choosing a row in the palette leaves the focus to the new page, not to what opened it (its tooltip)', async () => {
+    const {router} = await renderApp('/', signedIn());
+    const issues = screen.getByRole('link', {name: /My issues/});
+    issues.focus();
+    key('k', {ctrlKey: true});
+    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    fireEvent.change(input, {target: {value: 'go to the inbox'}});
+    await waitFor(() => {
+      expect(screen.getByRole('option', {name: /Go to the inbox/})).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('option', {name: /Go to the inbox/}));
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/notifications');
+    });
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText(/^Search repositories, issues/)).toBeNull();
+    });
+    expect(document.activeElement).not.toBe(issues);
   });
 
   test('a repository page holds its group while open', async () => {
@@ -275,11 +387,17 @@ describe('signed in', () => {
     expect(app.ui.signOut).toBeUndefined();
   });
 
-  test('? lists the shortcuts that work here', async () => {
+  test('? lists every shortcut, those of this page first, and closes with its button', async () => {
     await renderApp('/', signedIn());
     key('?', {shiftKey: true});
     const dialog = await screen.findByRole('dialog', {name: 'Keyboard shortcuts'});
     expect(within(dialog).getByText('Go to my issues')).toBeTruthy();
-    expect(within(dialog).queryByText('Next item')).toBeNull(); // no list on this page
+    expect(within(dialog).getByText('Go to Home')).toBeTruthy();
+    expect(within(dialog).getByText('Next item')).toBeTruthy(); // lists too, though no list is on this page
+    expect(within(dialog).getAllByRole('heading', {level: 3}).map((h) => h.textContent)[0]).toBe('General');
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Close'}));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', {name: 'Keyboard shortcuts'})).toBeNull();
+    });
   });
 });

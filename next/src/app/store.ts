@@ -21,6 +21,8 @@ export interface Session {
 
 export interface UiState {
   paletteOpen: boolean;
+  /** What the palette opens with (a list's search that found nothing here, to search everywhere); taken once. */
+  paletteQuery: string;
   shortcutsOpen: boolean;
   /** The sign-out warning (unsynced intents), with their count. */
   signOut: {pending: number} | undefined;
@@ -28,23 +30,27 @@ export interface UiState {
   pendingIntents: number;
   /** Unread notifications as the user sees them (pending read/unread intents included); undefined until the queue started. */
   unread: number | undefined;
-  /** The new-issue dialog (C): open, for which repository (0: the last one used). */
-  create: {repoId: number} | undefined;
+  /** The new-issue dialog (C): open, for which repository (0: the last one used), for which board column. */
+  create: {repoId: number; board?: {projectId: number; columnId: number}} | undefined;
   /** The "Unsynced changes" panel is open. */
   unsyncedOpen: boolean;
   /** Transient notices (notices.ts), oldest first. */
   notices: NoticeSpec[];
   /** The repository whose page is open (the new-issue dialog's default), 0 for none. */
   repoOpen: number;
+  /** The repository whose page was open last (kept after leaving it: the palette's files), 0 for none yet. */
+  recentRepo: number;
   /** The issue whose page is open (its conflicts and overrides show inline there, not as notices). */
   issueOpen: number | undefined;
   /** The issues the keyboard acts on (the list's selection or cursor, the open issue): the palette offers their actions. */
   issueTarget: readonly number[];
   /** An open issue picker (S/L/A/M/P): which field, for which issues. */
   picker: {kind: PickerKind; issueIds: readonly number[]} | undefined;
+  /** The page shown before this one in this tab (site path; an issue's Esc goes back to a list only). */
+  previousPath: string | undefined;
 }
 
-export type PickerKind = 'status' | 'priority' | 'labels' | 'assignees' | 'milestone';
+export type PickerKind = 'status' | 'priority' | 'labels' | 'assignees' | 'milestone' | 'reviewers' | 'dependency' | 'project' | 'due';
 
 export interface App {
   readonly config: NextConfig;
@@ -55,7 +61,7 @@ export interface App {
 
 export function createApp(config: NextConfig, session: Session | undefined): App {
   const ui = observable<UiState>(
-    {paletteOpen: false, shortcutsOpen: false, signOut: undefined, pendingIntents: 0, unread: undefined, create: undefined, unsyncedOpen: false, issueOpen: undefined, repoOpen: 0, notices: [], issueTarget: [], picker: undefined},
+    {paletteOpen: false, paletteQuery: '', shortcutsOpen: false, signOut: undefined, pendingIntents: 0, unread: undefined, create: undefined, unsyncedOpen: false, issueOpen: undefined, repoOpen: 0, recentRepo: 0, notices: [], issueTarget: [], picker: undefined, previousPath: undefined},
     {notices: observableShallow, issueTarget: observableRef, picker: observableRef, create: observableRef},
   );
   return {config, session, ui};

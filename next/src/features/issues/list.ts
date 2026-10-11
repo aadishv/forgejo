@@ -20,8 +20,10 @@
 
 import {computed, createAtom, type IComputedValue, observable, runInAction, untracked} from 'mobx';
 import {sitePath} from '../../app/config.ts';
+import {netSignal} from '../../sync/net.ts';
 import {type ListSearch, type MyListType, parseLabels} from '../../app/search.ts';
 import type {App} from '../../app/store.ts';
+import type {Entity} from '../../data/entity.ts';
 import type {ModelName} from '../../data/models.ts';
 import type {Applied, Pool} from '../../data/pool.ts';
 import type {Overlay} from '../../intents/overlay.ts';
@@ -47,6 +49,10 @@ export function queryOf(s: ListSearch, defaults: {group?: Group; sort?: Sort} = 
       poster: s.poster,
       milestone: s.milestone,
       q: s.q,
+      status: s.status,
+      priority: s.priority,
+      label: s.label,
+      repo: s.repo,
     },
     sort: s.sort ?? defaults.sort ?? 'newest',
     group: s.group ?? defaults.group ?? 'none',
@@ -85,6 +91,15 @@ export function poolContext(pool: Pool, overlay: Overlay): QueryContext {
     },
     repo: (id) => pool.model('Repository').get(id)?.data,
   };
+}
+
+/** An issue's pinned order as the user sees it (a pending pin or unpin included); 0 when not pinned. */
+function pinOrder(overlay: Overlay, i: Issue): number {
+  if (!overlay.touches(i.id)) return i.pin_order > 0 ? i.pin_order : 0;
+  const o = overlay.field('Issue', i.id, 'pin_order');
+  const v = o ? o.value as number : i.pin_order;
+  // Pinned here and not synced yet: after the ones Forgejo has (their order is Forgejo's).
+  return v > 0 ? v : 0;
 }
 
 function sameRow(x: Row | undefined, y: Row | undefined): boolean {
@@ -212,16 +227,23 @@ export class IssueListModel {
 
   /** Shows another view (recomputed on the next read: in the same frame). */
   setSearch(s: ListSearch): void {
-    if (JSON.stringify(s) === JSON.stringify(this.view.get())) return;
-    runInAction(() => {
-      this.view.set(s);
-    });
+    if (JSON.stringify(s) !== JSON.stringify(this.view.get())) {
+      runInAction(() => {
+        this.view.set(s);
+      });
+    }
+    // Also for the first view when it is the default one (asks once per state).
     this.askServer();
   }
 
   dispose(): void {
     this.disposed = true;
     this.off();
+  }
+
+  /** Whether the server's answer is here (a list that needs one: serverAssisted); observable. */
+  get serverAnswered(): boolean {
+    return this.serverIds.get() !== undefined;
   }
 
   /** Whether the list needs the server's answer (mentioned, review requested). */
@@ -234,9 +256,14 @@ export class IssueListModel {
     const query = this.query;
     const overlayRev = this.overlay.revision;
     const server = this.serverIds.get();
+    // Issues created on this device and not synced yet (observes creations only): listed, marked as pending.
+    const created = this.overlay.created('Issue');
     return untracked(() => {
       const t0 = performance.now();
-      const out = runQuery(this.candidates(server), query, poolContext(this.pool, this.overlay));
+      const ctx = poolContext(this.pool, this.overlay);
+      // A repository's list shows its pinned issues first (the classic list does; the row has the pin).
+      if (this.source.kind === 'repo') ctx.pin = (i) => pinOrder(this.overlay, i);
+      const out = runQuery([...this.candidates(server), ...this.localCandidates(created)], query, ctx);
       this.lastMs = performance.now() - t0;
       this.listed = new Set(out.ids);
       try {
@@ -260,6 +287,17 @@ export class IssueListModel {
       return out;
     }
     return this.myCandidates(src, server);
+  }
+
+  /** The locally created issues this list shows (its repository, or the viewer's own "created" and "all" lists). */
+  private localCandidates(created: readonly Entity[]): Issue[] {
+    const src = this.source;
+    const out: Issue[] = [];
+    for (const e of created) {
+      const d = e.data as Issue;
+      if (src.kind === 'repo' ? d.repo_id === src.repoId && d.is_pull === src.pulls : !src.pulls && (src.type === undefined || src.type === 'created_by')) out.push(d);
+    }
+    return out;
   }
 
   private *myCandidates(src: Extract<ListSource, {kind: 'my'}>, server: ReadonlySet<number> | undefined): Generator<Issue> {
@@ -317,22 +355,31 @@ export class IssueListModel {
     params.set(this.source.type === 'mentioned' ? 'mentioned' : 'review_requested', 'true');
     void (async () => {
       const ids = new Set<number>();
+      let answered = false;
       try {
         const token = await s.auth.token();
         for (let page = 1; page <= 10; page++) {
           params.set('page', String(page));
           const res = await fetch(sitePath(this.app.config, `/api/v1/repos/issues/search?${params.toString()}`), {
-            headers: {Authorization: `Bearer ${token}`, Accept: 'application/json'}, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15_000),
+            headers: {Authorization: `Bearer ${token}`, Accept: 'application/json'}, credentials: 'omit', redirect: 'error', signal: netSignal(15_000),
           });
           if (!res.ok) break;
+          answered = true;
           const list = await res.json() as {id?: unknown}[];
           for (const i of list) if (typeof i.id === 'number') ids.add(i.id);
           if (list.length < 50) break;
         }
       } catch {
-        // Offline: the local part only (review requests of loaded timelines).
+        // Offline, or Forgejo not answering: see below.
       }
       if (this.disposed || this.serverAsked !== key) return;
+      if (!answered) {
+        // No answer is not an empty list ("nobody waits for your review"): the list stays unanswered (its page and
+        // Home say it needs a connection) and asks again once the browser is back online.
+        this.serverAsked = '';
+        if (typeof window !== 'undefined') window.addEventListener('online', () => { this.askServer(); }, {once: true});
+        return;
+      }
       runInAction(() => {
         this.serverIds.set(ids);
       });

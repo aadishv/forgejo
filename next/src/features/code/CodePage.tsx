@@ -9,19 +9,20 @@
 // and tags, so what was seen once is there offline.
 
 import {useParams} from '@tanstack/react-router';
-import {Code2, FileQuestion} from 'lucide-react';
+import {Code2} from 'lucide-react';
 import {type ReactNode, useState} from 'react';
 import {PageBody} from '../../app/shell/Frame.tsx';
-import {PageHeader} from '../../app/shell/PageHeader.tsx';
-import {parseCodePath} from '../../code/refs.ts';
-import {EmptyState} from '../../ui/index.ts';
-import {RepoContext, Unavailable, useRepoPage} from '../repo/repoPage.tsx';
+import {parseCodePath, shortSha} from '../../code/refs.ts';
+import {Missing} from '../../app/Missing.tsx';
+import {RepoHeader, Unavailable, useRepoPage} from '../repo/repoPage.tsx';
 import {ActionsView, RunView} from './Actions.tsx';
 import {CompareView} from './Compare.tsx';
 import {CommitView, CommitsView} from './History.tsx';
-import {RepoTabs} from './nav.tsx';
 import {BranchesView, ReleasesView, TagsView} from './Refs.tsx';
 import {SrcView} from './Src.tsx';
+import {EmptyRepo} from './states.tsx';
+import {observer} from 'mobx-react-lite';
+import {usePool} from '../issues/cells.tsx';
 
 export interface CodeViewProps {
   owner: string;
@@ -31,40 +32,63 @@ export interface CodeViewProps {
   splat: string;
 }
 
+/** The browser tab's name of a code view whose title is not plain text (a path breadcrumb, a ref switcher). */
+function viewName(splat: string): string {
+  const r = parseCodePath(splat);
+  switch (r?.view) {
+    case 'blame': return 'Blame';
+    case 'commits': return 'Commits';
+    case 'commit': return `Commit ${shortSha(r.sha)}`;
+    case 'compare': return 'Compare';
+    case 'run': return `Run #${String(r.run)}`;
+    default: return 'Code';
+  }
+}
+
 /**
  * A code view's frame: the header (title, controls), the repository's tabs
  * and the scroll container, which the body gets (lists virtualize against it).
  */
-export function CodeFrame({view, title, controls, children}: {view: CodeViewProps; title: ReactNode; controls?: ReactNode; children: (scroller: HTMLDivElement | null) => ReactNode}) {
+export function CodeFrame({view, title, controls, docTitle, children}: {
+  view: CodeViewProps; title: ReactNode; controls?: ReactNode; children: (scroller: HTMLDivElement | null) => ReactNode;
+  /** The tab's title when the title is not text (a file's path: "internal/geo · acme/atlas"). */
+  docTitle?: string | undefined;
+}) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   return (
     <>
-      <PageHeader icon={Code2} context={<RepoContext owner={view.owner} repo={view.repo}/>} title={title}>{controls}</PageHeader>
-      <RepoTabs owner={view.owner} repo={view.repo} current={view.splat}/>
+      <RepoHeader owner={view.owner} repo={view.repo} repoId={view.repoId} icon={Code2} title={title}
+        docTitle={docTitle ?? (typeof title === 'string' ? title : viewName(view.splat))}>{controls}</RepoHeader>
       <PageBody ref={setScroller}>{children(scroller)}</PageBody>
     </>
   );
 }
 
-export function CodePage() {
+export const CodePage = observer(function CodePage() {
   const {owner, repo, repoId} = useRepoPage();
+  const pool = usePool();
   const {_splat: splat = ''} = useParams({strict: false});
   if (repoId === undefined) {
     return (
       <>
-        <PageHeader icon={Code2} context={<RepoContext owner={owner} repo={repo}/>} title="Code"/>
-        <PageBody><Unavailable/></PageBody>
+        <RepoHeader owner={owner} repo={repo} repoId={undefined} icon={Code2} title="Code"/>
+        <PageBody><Unavailable owner={owner} repo={repo}/></PageBody>
       </>
     );
   }
   const props: CodeViewProps = {owner, repo, repoId, splat};
+  const repoEmpty = pool.model('Repository').get(repoId)?.get('empty') === true;
   const route = parseCodePath(splat);
   if (!route) {
     return (
       <CodeFrame view={props} title="Code">
-        {() => <EmptyState icon={FileQuestion} title="Not a page here" description="This address does not name a code view."/>}
+        {() => <Missing what="This page" description="This address does not name a code view." classic={`/${[owner, repo, ...splat.replace(/\/?-$/, '').split('/').filter(Boolean)].map(encodeURIComponent).join('/')}`}/>}
       </CodeFrame>
     );
+  }
+  // An empty repository: one state on every code tab (what to push), not "Branch or tag not found".
+  if (repoEmpty && route.view !== 'actions' && route.view !== 'run' && route.view !== 'releases') {
+    return <CodeFrame view={props} title="Code">{() => <EmptyRepo owner={owner} repo={repo} repoId={repoId}/>}</CodeFrame>;
   }
   switch (route.view) {
     case 'src':
@@ -87,4 +111,4 @@ export function CodePage() {
     case 'run':
       return <RunView {...props} key={`${String(repoId)}:${String(route.run)}`} run={route.run} job={route.job}/>;
   }
-}
+});

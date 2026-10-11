@@ -26,6 +26,30 @@ import (
 	"forgejo.org/services/livesync/protocol"
 )
 
+// pullStatus is a pull request's mergeability as the protocol names it (protocol.PullRequest.Status): lower case.
+// Status.String() is upper case ("CONFLICT"), which the client never matched: a pull request with conflicts read
+// as mergeable (QA verify3).
+func pullStatus(s issues_model.PullRequestStatus) string {
+	switch s {
+	case issues_model.PullRequestStatusConflict:
+		return "conflict"
+	case issues_model.PullRequestStatusChecking:
+		return "checking"
+	case issues_model.PullRequestStatusMergeable:
+		return "mergeable"
+	case issues_model.PullRequestStatusManuallyMerged:
+		return "manually_merged"
+	case issues_model.PullRequestStatusError:
+		return "error"
+	case issues_model.PullRequestStatusEmpty:
+		return "empty"
+	case issues_model.PullRequestStatusAncestor:
+		return "ancestor"
+	default:
+		return fmt.Sprintf("status_%d", int(s))
+	}
+}
+
 // spec materializes the rows of one tracked table.
 type spec struct {
 	table string
@@ -447,7 +471,7 @@ var specs = func() map[string]*spec {
 			},
 			dto: func(_ context.Context, _ *loader, r *issues_model.PullRequest) (any, error) {
 				p := &protocol.PullRequest{
-					ID: r.ID, IssueID: r.IssueID, Number: r.Index, Status: r.Status.String(),
+					ID: r.ID, IssueID: r.IssueID, Number: r.Index, Status: pullStatus(r.Status),
 					HeadRepoID: r.HeadRepoID, BaseRepoID: r.BaseRepoID, HeadBranch: r.HeadBranch, BaseBranch: r.BaseBranch,
 					MergeBase: r.MergeBase, AllowMaintainerEdit: r.AllowMaintainerEdit, Merged: r.HasMerged,
 					MergeCommitSHA: r.MergedCommitID, MergerID: r.MergerID, CommitsAhead: r.CommitsAhead,
@@ -550,15 +574,37 @@ var specs = func() map[string]*spec {
 		rowSpec[activities_model.Notification]{
 			model: protocol.ModelNotification, schema: protocol.SchemaNotification,
 			id: func(r *activities_model.Notification) int64 { return r.ID },
+			// Who caused it: the comment's author, else the issue's (Forgejo stores no actor). Both are read once
+			// here: a comment's or an issue's author never changes.
+			prepare: func(ctx context.Context, l *loader, rows []*activities_model.Notification) error {
+				var comments, issues []int64
+				for _, r := range rows {
+					if r.CommentID > 0 {
+						comments = append(comments, r.CommentID)
+					} else if r.IssueID > 0 {
+						issues = append(issues, r.IssueID)
+					}
+				}
+				if err := l.loadComments(ctx, comments); err != nil {
+					return err
+				}
+				return l.loadIssues(ctx, issues)
+			},
 			place: func(_ *loader, r *activities_model.Notification) (string, protocol.Unit) {
 				return protocol.UserGroup(r.UserID), protocol.UnitSelf
 			},
-			dto: func(_ context.Context, _ *loader, r *activities_model.Notification) (any, error) {
-				return &protocol.Notification{
+			dto: func(_ context.Context, l *loader, r *activities_model.Notification) (any, error) {
+				n := &protocol.Notification{
 					ID: r.ID, UserID: r.UserID, RepoID: r.RepoID, Status: notificationStatus(r.Status),
 					Source: notificationSource(r.Source), IssueID: r.IssueID, CommentID: r.CommentID,
 					CreatedAt: ts(r.CreatedUnix), UpdatedAt: ts(r.UpdatedUnix),
-				}, nil
+				}
+				if c := l.comments[r.CommentID]; r.CommentID > 0 && c != nil {
+					n.ActorID = c.PosterID
+				} else if i := l.issues[r.IssueID]; r.CommentID == 0 && i != nil {
+					n.ActorID = i.PosterID
+				}
+				return n, nil
 			},
 		}.spec("notification"),
 		rowSpec[issues_model.Stopwatch]{

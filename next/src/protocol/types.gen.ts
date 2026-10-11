@@ -107,6 +107,27 @@ export interface APICardMove {
   cards?: APICard[];
 }
 /**
+ * APICommentResolved resolves (or unresolves) the conversation a pull
+ * request's code comment starts (the classic Files tab's Resolve). The
+ * classic checks: the pull request's poster, a writer of its pull requests
+ * or an official reviewer (403); 422 for any other comment. Idempotent.
+ */
+export interface APICommentResolved {
+  resolved: boolean;
+}
+/**
+ * APIIssueProject puts an issue on a project's board (in ColumnID, or the
+ * project's default column when 0; at the column's end) or, with
+ * ProjectID 0, takes it off its project. An issue is on one project at a
+ * time (Forgejo's rule): another project takes it off the first. The
+ * classic issue sidebar's checks: the viewer writes the repository's issues
+ * (403), the project is the repository's or its owner's and readable (404).
+ */
+export interface APIIssueProject {
+  project_id: number /* int64 */;
+  column_id?: number /* int64 */;
+}
+/**
  * APICard is a card's position in APICardMove.Cards.
  */
 export interface APICard {
@@ -184,6 +205,34 @@ export const ViewedHasChanged = "has_changed";
 export interface APIViewedUpdate {
   commit_sha?: string;
   files: { [key: string]: boolean};
+}
+/**
+ * APIMarkupRequest renders a repository file's markup (markdown, by the
+ * path's extension) as the classic file view does: relative links and
+ * images resolve from the file's directory at Ref ("branch/main",
+ * "tag/v1.0", "commit/<sha>"), root-relative ones from the repository's
+ * root at Ref. Permission: the repository's code unit.
+ * With Commit (a full SHA) the server reads the file at Commit/Path itself
+ * and Text is ignored: a repository's README renders in one round trip,
+ * without the client fetching its tree and its blob first (the client asks
+ * for README.md with the tree, before it knows the name: no such file is
+ * an answer, Missing, not an error; 404 for no such commit, 413 for a file
+ * too large to display).
+ */
+export interface APIMarkupRequest {
+  repo_id: number /* int64 */;
+  ref: string;
+  path: string;
+  text: string;
+  commit?: string;
+}
+/**
+ * APIMarkupResponse is the rendered (sanitized) HTML; Missing: the request
+ * named a Commit and there is no file at Path.
+ */
+export interface APIMarkupResponse {
+  html: string;
+  missing?: boolean;
 }
 /**
  * APIMarkdownRequest renders markdown previews in one request (at most 64
@@ -992,6 +1041,10 @@ export interface Notification {
   subject: string; // "issue", "pull", "commit", "repository"
   issue_id: number /* int64 */;
   comment_id: number /* int64 */;
+  /**
+   * ActorID is who caused it: the comment's author, else the issue's (0: unknown).
+   */
+  actor_id: number /* int64 */;
   created_at: string /* RFC 3339, UTC */;
   updated_at: string /* RFC 3339, UTC */;
 }
@@ -1135,6 +1188,23 @@ export interface Review {
   dismissed: boolean;
   created_at: string /* RFC 3339, UTC */;
   updated_at: string /* RFC 3339, UTC */;
+}
+/**
+ * ReviewVerdict is a review's verdict (approved or changes requested) in the
+ * pull request's repository group (unit pulls): a second entity of the review
+ * row, so that list rows show who approved or asked for changes without the
+ * pull request's issue group (where its Review, with the body, is). Same id
+ * as the Review.
+ */
+export interface ReviewVerdict {
+  id: number /* int64 */;
+  issue_id: number /* int64 */;
+  reviewer_id: number /* int64 */;
+  state: string; // "APPROVED", "REQUEST_CHANGES"
+  official: boolean;
+  stale: boolean;
+  dismissed: boolean;
+  created_at: string /* RFC 3339, UTC */;
 }
 /**
  * ReviewState holds a user's "viewed files" of a pull request at a commit
@@ -1836,6 +1906,7 @@ export const ModelBlockedUser: Model = "BlockedUser";
 export const ModelComment: Model = "Comment";
 export const ModelReaction: Model = "Reaction";
 export const ModelReview: Model = "Review";
+export const ModelReviewVerdict: Model = "ReviewVerdict";
 export const ModelReviewState: Model = "ReviewState";
 export const ModelAttachment: Model = "Attachment";
 export const ModelIssueDependency: Model = "IssueDependency";
@@ -1861,14 +1932,14 @@ export const SchemaIssue = 1;
 export const SchemaIssueBody = 1;
 export const SchemaIssueLabel = 1;
 export const SchemaIssueAssignee = 1;
-export const SchemaPullRequest = 1;
+export const SchemaPullRequest = 2; // 2: status in lower case, as documented (1 sent Go's upper-case names)
 export const SchemaAutoMerge = 1;
 export const SchemaBranch = 1;
 export const SchemaRelease = 1;
 export const SchemaCommitStatus = 1;
 export const SchemaActionRun = 1;
 export const SchemaActionRunJob = 1;
-export const SchemaNotification = 1;
+export const SchemaNotification = 2; // 2: actor_id
 export const SchemaStopwatch = 1;
 export const SchemaIssueWatch = 1;
 export const SchemaWatch = 1;
@@ -1877,6 +1948,7 @@ export const SchemaBlockedUser = 1;
 export const SchemaComment = 1;
 export const SchemaReaction = 1;
 export const SchemaReview = 1;
+export const SchemaReviewVerdict = 1;
 export const SchemaReviewState = 1;
 export const SchemaAttachment = 1;
 export const SchemaIssueDependency = 1;

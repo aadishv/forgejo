@@ -53,6 +53,7 @@ import {
   HeaderIdempotencyKey, HeaderSyncID, RUMConflictDiscarded, RUMConflictMerged, RUMConflictOverride, RUMIntentFailed, RUMIntentFlushed,
   RUMIntentRetried, RUMMutationAcked, RUMMutationConfirmed, RUMMutationLocal,
 } from '../protocol/types.gen.ts';
+import {netSignal} from '../sync/net.ts';
 import {count, queueDepth, sample} from '../sync/rum.ts';
 import {effectHeld, lastChangedBy, scalarField, serverScalar} from './effects.ts';
 import {chainOf, CREATES, describeIntent, groupOf, type Intent, type IntentInput, intentOps, intentText, isTemp, type Names, newIntent, POLICY, remapIntent, tempNum, tempRefs, uuid} from './intents.ts';
@@ -107,6 +108,8 @@ export interface Override {
   mine: unknown;
   /** The intent that undoes it. */
   undo: IntentInput;
+  /** When the user made the change (ms since epoch): what else changed on the issue since is said with it. */
+  since?: number;
 }
 
 export interface IntentEnv {
@@ -160,8 +163,12 @@ export interface IntentEnv {
 /** Requests in flight at once, across entities. */
 const MAX_SENDS = 6;
 
-/** Intents on hot rows (B7: their echo may not cover a deferred change), and how long their confirmation waits for the effect. */
-const HOT_KINDS: ReadonlySet<string> = new Set(['notification.status']);
+/**
+ * Intents whose echo may not show their effect, and how long their confirmation waits for it: hot rows (B7: a
+ * deferred change), and dependencies (B6 conditionals: they arrive with the issue's next load, which their
+ * timeline event starts: sync/client.ts CONDITIONAL_EVENTS).
+ */
+const HOT_KINDS: ReadonlySet<string> = new Set(['notification.status', 'notification.readAll', 'issue.dependency']);
 const HOT_WAIT_MS = 5000;
 
 /** RUM: an intent first attempted within this long of its local apply was sent at once (online). */
@@ -169,7 +176,9 @@ const IMMEDIATE_MS = 1000;
 
 /** An intent the user may still take back (never attempted, or parked). */
 export function discardable(rec: IntentRecord): boolean {
-  return rec.state === 'parked' || (rec.state === 'queued' && rec.req === undefined);
+  // A queued intent that was attempted (its request frozen: a retry after a server error or no answer) can be
+  // given up too: it may have reached Forgejo, and then the change syncs back as Forgejo has it (the panel says so).
+  return rec.state === 'parked' || rec.state === 'queued';
 }
 
 export class Intents {
@@ -253,7 +262,12 @@ export class Intents {
     // An entity created offline and already created on the server: its server id (it may still show under its temporary one).
     const t0 = performance.now();
     const i = this.remapKnown(newIntent(input, this.now()));
-    const rec: IntentRecord = {id: i.id, intent: i, state: 'queued', attempts: 0, updated: this.now(), title: describeIntent(i, this.env.names?.() ?? {})};
+    const names = this.env.names?.() ?? {};
+    const issueNumber = issueNumberOf(i, names);
+    const rec: IntentRecord = {
+      id: i.id, intent: i, state: 'queued', attempts: 0, updated: this.now(), title: describeIntent(i, names),
+      ...(issueNumber === undefined ? {} : {issueNumber}),
+    };
     this.unstored.add(i.id);
     this.apply(() => {
       if (replaces.intent) {
@@ -307,6 +321,15 @@ export class Intents {
     let n = 0;
     for (const d of this.drafts.values()) if (d.kind === 'failed') n++;
     return n;
+  }
+
+  /** The temporary id (uuid) of an issue created here and not synced yet (its page: …/issues/new-<tempId>). */
+  tempIdOf(issueId: number): string | undefined {
+    for (const rec of this.records.values()) {
+      const i = rec.intent;
+      if (i.kind === 'issue.create' && i.issueId === issueId) return i.tempId;
+    }
+    return undefined;
   }
 
   /** Observable: the number of intents pending on an issue (its pending badge). */
@@ -949,7 +972,7 @@ export class Intents {
         credentials: 'omit',
         // The API answers writes directly: never follow a redirect with the token.
         redirect: 'manual',
-        signal: AbortSignal.timeout(30_000),
+        signal: netSignal(30_000),
       });
       if (this.closed) return undefined;
       return res;
@@ -972,6 +995,11 @@ export class Intents {
       return;
     }
     if (res.ok) {
+      // Adding a label Forgejo no longer has answers 200 with the issue's labels, without it: nothing was added.
+      if (i.kind === 'issue.label' && i.add && !await hasLabel(res, i.labelId)) {
+        await this.fail(rec, 'The label no longer exists on Forgejo.', true);
+        return;
+      }
       await this.ack(rec, res);
       return;
     }
@@ -1002,7 +1030,7 @@ export class Intents {
       }
       // Already so (an issue already locked) or a stale view.
       if (effectHeld(this.env.pool, i, this.env.userId)) await this.done(rec, undefined);
-      else await this.fail(rec, message(j, res.status));
+      else await this.fail(rec, message(j, res.status, i), true);
       return;
     }
     // Removing what is already gone.
@@ -1011,10 +1039,20 @@ export class Intents {
       return;
     }
     if (res.status === 429 || res.status >= 500) {
-      await this.later(rec, wait, `Forgejo answered ${String(res.status)}; retrying.`, true);
+      const j = await json(res);
+      const said = typeof j?.message === 'string' ? j.message.trim().slice(0, 300) : '';
+      // A refusal Forgejo reports as a server error (API v1 answers 500 for "the max number of pinned issues has
+      // been reached"): it will say the same every time. Known ones fail at once; any other 500 that says the same
+      // thing on its third attempt is taken for one too, instead of being retried forever.
+      const note = `Forgejo answered ${String(res.status)}${said ? `: ${said}` : ''}; retrying.`;
+      if (res.status === 500 && said && (refusal(said) || (rec.attempts >= 2 && rec.note === note))) {
+        await this.fail(rec, message(j, res.status, i), true);
+        return;
+      }
+      await this.later(rec, wait, note, true);
       return;
     }
-    await this.fail(rec, message(await json(res), res.status));
+    await this.fail(rec, message(await json(res), res.status, i), res.status !== 408);
   }
 
   /** 2xx: remembered with its sync id (and a create's id, remapped in the same transaction), then confirmed. */
@@ -1063,7 +1101,7 @@ export class Intents {
     else if (i.kind === 'issue.milestone') undo = {...ref, kind: 'issue.milestone', milestoneId: theirs as number, base: i.milestoneId};
     else if (i.kind === 'issue.deadline') undo = {...ref, kind: 'issue.deadline', due: theirs as string | null, base: i.due};
     if (!undo) return;
-    const o: Override = {id: rec.id, issueId: i.issueId, repoId: i.repoId, field, who, theirs, mine, undo};
+    const o: Override = {id: rec.id, issueId: i.issueId, repoId: i.repoId, field, who, theirs, mine, undo, since: i.created};
     count(RUMConflictOverride);
     this.apply(() => this.overrides.push(o));
     this.env.channel.post({t: 'override', override: o});
@@ -1161,17 +1199,20 @@ export class Intents {
   }
 
   /** It cannot be carried out: the layer goes, the intent and its text become a draft (one transaction). */
-  private async fail(rec: IntentRecord, reason: string): Promise<void> {
+  private async fail(rec: IntentRecord, reason: string, refused = false): Promise<void> {
     this.immediate.delete(rec.id);
     const i = rec.intent;
     const text = intentText(i);
     // The names may have left the pool since it was made (a revoked repository's labels): then the words
     // from when it was made say more.
-    const now = describeIntent(i, this.env.names?.() ?? {});
+    const names = this.env.names?.() ?? {};
+    const now = describeIntent(i, names);
     const title = rec.title !== undefined && rec.title.length > now.length ? rec.title : now;
+    const issueNumber = rec.issueNumber ?? issueNumberOf(i, names);
     const draft: DraftRecord = {
       key: failedKey(rec.id), kind: 'failed', intent: i, reason, title,
-      issueId: i.issueId, repoId: i.repoId, at: this.now(), ...(text === undefined ? {} : {text}),
+      issueId: i.issueId, repoId: i.repoId, at: this.now(), ...(text === undefined ? {} : {text}), ...(refused ? {refused} : {}),
+      ...(issueNumber === undefined ? {} : {issueNumber}),
     };
     const ok = await this.env.db.fail(rec.id, draft);
     if (this.closed || !ok) return;
@@ -1267,6 +1308,11 @@ function valueOf(i: Intent): unknown {
   }
 }
 
+/** The number of the issue a change is about (not a notification's: the inbox names those itself). */
+function issueNumberOf(i: Intent, names: Names): number | undefined {
+  return i.issueId > 0 && !i.kind.startsWith('notification.') ? names.issue?.(i.issueId) : undefined;
+}
+
 /** Intents that remove something: a 404 means it is already gone. */
 function removes(i: Intent): boolean {
   switch (i.kind) {
@@ -1295,6 +1341,17 @@ async function createdId(i: Intent, res: Response): Promise<{id: number; number?
   return typeof j?.number === 'number' ? {id, number: j.number} : {id};
 }
 
+/** Whether an answer listing the issue's labels has this one (an answer that lists none we can read: assumed). */
+async function hasLabel(res: Response, labelId: number): Promise<boolean> {
+  try {
+    const j: unknown = await res.clone().json();
+    if (!Array.isArray(j)) return true;
+    return j.some((l: unknown) => typeof l === 'object' && l !== null && (l as {id?: unknown}).id === labelId);
+  } catch {
+    return true;
+  }
+}
+
 async function json(res: Response): Promise<Record<string, unknown> | undefined> {
   try {
     const j: unknown = await res.clone().json();
@@ -1304,11 +1361,54 @@ async function json(res: Response): Promise<Record<string, unknown> | undefined>
   }
 }
 
-function message(j: Record<string, unknown> | undefined, status: number): string {
-  if (typeof j?.message === 'string' && j.message) return j.message.slice(0, 300);
-  if (status === 404) return 'It is not there any more, or you cannot see it.';
+/** Server errors that are Forgejo's refusals, not failures (the same answer every time). */
+const REFUSALS: [RegExp, string][] = [
+  [/max(?:imum)? number of pinned issues/i, 'Forgejo pins only a few issues per repository, and that many are pinned already: unpin one first.'],
+  [/still has open dependencies/i, 'It is blocked by issues that are still open: close those first, or remove the dependency.'],
+];
+
+function refusal(said: string): string | undefined {
+  return REFUSALS.find(([re]) => re.test(said))?.[1];
+}
+
+/** What Forgejo said, as a sentence for the user (its own message when there is one, ended with a period). */
+function message(j: Record<string, unknown> | undefined, status: number, i: Intent): string {
+  const said = typeof j?.message === 'string' ? j.message.trim().slice(0, 300) : '';
+  if (said && !internal(said)) {
+    const known = refusal(said);
+    if (known) return known;
+    return /[.!?]$/.test(said) ? said.charAt(0).toUpperCase() + said.slice(1) : `${said.charAt(0).toUpperCase()}${said.slice(1)}.`;
+  }
+  if (status === 404) return `${subjectOf(i)} is not there any more, or you cannot see it.`;
   if (status === 403) return 'You are not allowed to do this.';
   return `Forgejo answered ${String(status)}.`;
+}
+
+/**
+ * A message that is Forgejo's internals, not words for a user: an error's Go name ("IsErrIssueNotExist", as API v1
+ * answers a comment on a deleted issue) or a single identifier.
+ */
+function internal(said: string): boolean {
+  return /^\w+\.?$/.test(said) && (/^(Is)?Err[A-Z]/.test(said) || /[a-z][A-Z]/.test(said));
+}
+
+/** What a change is about, as the subject of "… is not there any more". */
+function subjectOf(i: Intent): string {
+  switch (i.kind) {
+    case 'comment.edit':
+    case 'comment.delete':
+    case 'comment.resolve':
+      return 'The comment';
+    case 'reaction':
+      return i.commentId ? 'The comment' : 'The issue';
+    case 'issue.create':
+      return 'The repository';
+    case 'notification.status':
+    case 'notification.readAll':
+      return 'The notification';
+    default:
+      return 'The issue';
+  }
 }
 
 function sleepMs(ms: number): Promise<void> {

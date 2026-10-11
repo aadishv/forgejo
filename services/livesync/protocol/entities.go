@@ -464,13 +464,15 @@ type ActionRunJob struct {
 // Notification is an inbox entry of a user (group user:{user_id}, unit
 // self).
 type Notification struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	RepoID    int64     `json:"repo_id"`
-	Status    string    `json:"status"`  // "unread", "read", "pinned"
-	Source    string    `json:"subject"` // "issue", "pull", "commit", "repository"
-	IssueID   int64     `json:"issue_id"`
-	CommentID int64     `json:"comment_id"`
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	RepoID    int64  `json:"repo_id"`
+	Status    string `json:"status"`  // "unread", "read", "pinned"
+	Source    string `json:"subject"` // "issue", "pull", "commit", "repository"
+	IssueID   int64  `json:"issue_id"`
+	CommentID int64  `json:"comment_id"`
+	// ActorID is who caused it: the comment's author, else the issue's (0: unknown).
+	ActorID   int64     `json:"actor_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -606,6 +608,22 @@ type Review struct {
 	Dismissed      bool      `json:"dismissed"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// ReviewVerdict is a review's verdict (approved or changes requested) in the
+// pull request's repository group (unit pulls): a second entity of the review
+// row, so that list rows show who approved or asked for changes without the
+// pull request's issue group (where its Review, with the body, is). Same id
+// as the Review.
+type ReviewVerdict struct {
+	ID         int64     `json:"id"`
+	IssueID    int64     `json:"issue_id"`
+	ReviewerID int64     `json:"reviewer_id"`
+	State      string    `json:"state"` // "APPROVED", "REQUEST_CHANGES"
+	Official   bool      `json:"official"`
+	Stale      bool      `json:"stale"`
+	Dismissed  bool      `json:"dismissed"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ReviewState holds a user's "viewed files" of a pull request at a commit

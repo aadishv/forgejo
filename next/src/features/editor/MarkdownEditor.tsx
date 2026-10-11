@@ -6,11 +6,15 @@
 // on the boot route. Markdown is parsed with @lezer/markdown (GFM) and
 // highlighted with lezer's class highlighter (`tok-*` classes); every look
 // comes from the design tokens (the theme below names variables only).
-// The frame (border, focus outline) is the EditorFrame primitive.
+// The frame (border, focus outline, the Write / Preview tabs) is the field's: EditorFrame, in Composer.tsx.
 //
 // The text is the caller's state: typing reports it (onChange), and a new
 // `value` from the caller (cleared after a save, a restored draft) replaces
-// the document. ⌘↵ submits, Esc cancels.
+// the document. ⌘↵ submits, Esc cancels. "@" suggests people and "#"
+// issues (the caller's `complete`: Enter or Tab takes one, Esc closes the
+// list first).
+
+import {autocompletion, type CompletionContext, type CompletionResult, completionKeymap} from '@codemirror/autocomplete';
 
 import {defaultKeymap, history, historyKeymap} from '@codemirror/commands';
 import {defineLanguageFacet, Language, LanguageSupport, syntaxHighlighting} from '@codemirror/language';
@@ -19,7 +23,7 @@ import {EditorView, keymap, placeholder as cmPlaceholder} from '@codemirror/view
 import {classHighlighter} from '@lezer/highlight';
 import {GFM, parser} from '@lezer/markdown';
 import {type Ref, useEffect, useImperativeHandle, useRef, useState} from 'react';
-import {EditorFrame} from '../../ui/index.ts';
+import {type Format, formatEdit} from './format.ts';
 
 const markdown = new LanguageSupport(new Language(defineLanguageFacet(), parser.configure([GFM]), [], 'markdown'));
 
@@ -41,10 +45,47 @@ const theme = EditorView.theme({
   '.tok-meta, .tok-punctuation, .tok-processingInstruction': {color: 'var(--color-fg-subtle)'},
   '.tok-strikethrough': {textDecoration: 'line-through'},
   '.tok-quote, .tok-comment': {color: 'var(--color-fg-muted)'},
+  // The suggestions: a menu's look (floating surface, menu rows) from the tokens.
+  '.cm-tooltip.cm-tooltip-autocomplete': {
+    backgroundColor: 'var(--color-raised)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)',
+    boxShadow: 'var(--shadow-popover)', padding: 'var(--spacing)', zIndex: 'var(--z-popover)',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': {fontFamily: 'var(--font-sans)', fontSize: 'var(--text-base)', maxHeight: 'calc(var(--spacing-row) * 8)'},
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+    display: 'flex', alignItems: 'center', gap: 'calc(var(--spacing) * 2)', height: 'var(--spacing-control)',
+    padding: '0 calc(var(--spacing) * 2)', borderRadius: 'var(--radius-sm)', color: 'var(--color-fg)',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {backgroundColor: 'var(--color-raised-hover)', color: 'var(--color-fg)'},
+  '.cm-completionDetail': {color: 'var(--color-fg-subtle)', fontStyle: 'normal', marginLeft: '0', overflow: 'hidden', textOverflow: 'ellipsis'},
+  '.cm-completionIcon': {display: 'none'},
 });
+
+/** A suggestion for "@" (a person: login) or "#" (an issue: its number). */
+export interface Suggestion {
+  /** Inserted after the trigger. */
+  label: string;
+  /** Shown muted after it (a name, a title). */
+  detail?: string | undefined;
+}
+
+/** "@login" and "#12" at a word boundary: the caller's suggestions for what follows the trigger. */
+function suggestions(complete: (trigger: '@' | '#', query: string) => Suggestion[]) {
+  return (ctx: CompletionContext): CompletionResult | null => {
+    const m = ctx.matchBefore(/(?:^|[\s([{])[@#][\w.-]*$/);
+    if (!m) return null;
+    const at = m.text.search(/[@#]/);
+    const trigger = m.text[at] as '@' | '#';
+    const from = m.from + at + 1;
+    const query = ctx.state.sliceDoc(from, ctx.pos);
+    const options = complete(trigger, query).map((o) => ({label: o.label, ...(o.detail ? {detail: o.detail} : {}), type: trigger === '@' ? 'user' : 'issue'}));
+    return options.length ? {from, options, validFor: /^[\w.-]*$/, filter: false} : null;
+  };
+}
 
 export interface MarkdownEditorHandle {
   focus(): void;
+  /** Formats the selection (the toolbar; the keys are ⌘B, ⌘I, ⌘K). */
+  format(kind: Format): void;
 }
 
 export interface MarkdownEditorProps {
@@ -60,18 +101,28 @@ export interface MarkdownEditorProps {
   rows?: number | undefined;
   onSubmit?: (() => void) | undefined;
   onCancel?: (() => void) | undefined;
+  /** Suggestions after "@" (people) and "#" (issues). */
+  complete?: ((trigger: '@' | '#', query: string) => Suggestion[]) | undefined;
   ref?: Ref<MarkdownEditorHandle>;
 }
 
-export default function MarkdownEditor({value, onChange, label, placeholder, describedBy, invalid, autoFocus, rows = 4, onSubmit, onCancel, ref}: MarkdownEditorProps) {
+export default function MarkdownEditor({value, onChange, label, placeholder, describedBy, invalid, autoFocus, rows = 4, onSubmit, onCancel, complete, ref}: MarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | undefined>(undefined);
   // The latest callbacks, read by the editor's handlers (created once).
-  const cb = useRef({onChange, onSubmit, onCancel});
+  const cb = useRef({onChange, onSubmit, onCancel, complete});
   useEffect(() => {
-    cb.current = {onChange, onSubmit, onCancel};
+    cb.current = {onChange, onSubmit, onCancel, complete};
   });
-  useImperativeHandle(ref, () => ({focus: () => view.current?.focus()}), []);
+  useImperativeHandle(ref, () => ({
+    focus: () => view.current?.focus(),
+    format: (kind) => {
+      if (view.current) {
+        applyFormat(view.current, kind);
+        view.current.focus();
+      }
+    },
+  }), []);
   const [attrs] = useState(() => new Compartment());
   const contentAttrs = () => EditorView.contentAttributes.of({
     'aria-label': label,
@@ -89,6 +140,9 @@ export default function MarkdownEditor({value, onChange, label, placeholder, des
         doc: value,
         extensions: [
           history(),
+          autocompletion({override: [suggestions((t, q) => cb.current.complete?.(t, q) ?? [])], icons: false, activateOnTyping: true}),
+          // Before the editor's own keys: with the list open, Enter and Esc are the list's.
+          keymap.of(completionKeymap),
           keymap.of([
             {key: 'Mod-Enter', run: () => {
               cb.current.onSubmit?.();
@@ -98,6 +152,10 @@ export default function MarkdownEditor({value, onChange, label, placeholder, des
               cb.current.onCancel?.();
               return Boolean(cb.current.onCancel);
             }},
+            // Formatting (⌘K here is the link, not the command menu: the editor keeps it while it has the focus).
+            {key: 'Mod-b', run: (v) => applyFormat(v, 'bold')},
+            {key: 'Mod-i', run: (v) => applyFormat(v, 'italic')},
+            {key: 'Mod-k', run: (v) => applyFormat(v, 'link')},
             // Tab moves the focus on (as in a text area: no keyboard trap); lists indent with ⌘] / ⌘[ (defaultKeymap).
             ...historyKeymap,
             ...defaultKeymap,
@@ -138,9 +196,14 @@ export default function MarkdownEditor({value, onChange, label, placeholder, des
     v.dispatch({changes: {from: 0, to: v.state.doc.length, insert: value}, selection: {anchor: value.length}});
   }, [value]);
 
-  return (
-    <EditorFrame invalid={invalid}>
-      <div ref={host}/>
-    </EditorFrame>
-  );
+  // The frame (and the Write / Preview tabs) is the field's (MarkdownField): the editor is its body.
+  return <div ref={host}/>;
+}
+
+/** Formats the main selection as one change (one undo step). */
+function applyFormat(v: EditorView, kind: Format): boolean {
+  const {from, to} = v.state.selection.main;
+  const e = formatEdit(v.state.doc.toString(), from, to, kind);
+  v.dispatch({changes: {from: e.from, to: e.to, insert: e.insert}, selection: {anchor: e.anchor, head: e.head}, userEvent: 'input.format'});
+  return true;
 }

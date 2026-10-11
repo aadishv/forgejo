@@ -91,12 +91,16 @@ test('repository browser: tree, highlighted file, blame, branches, history, comm
   await expect(page.locator('.text-syn-keyword').first()).toBeVisible({timeout: 15_000});
   await expect(page.locator('.text-syn-keyword').first()).toHaveText(/package|import|func/);
   // Blame.
-  await page.getByRole('link', {name: 'Blame'}).click();
+  await page.getByRole('radio', {name: 'Blame'}).click();
   await expect(page.getByRole('list', {name: 'Blame of src/main.go'})).toBeVisible({timeout: 15_000});
   await expect(page.getByText('Add sources').first()).toBeVisible();
   // Hostile file name and content: text.
   await page.goto(code('src/branch/main/docs'));
   await page.getByRole('option', {name: /onerror/}).click();
+  // A markdown file opens rendered (scrubbed: no script, no event handler); its source is text.
+  await expect(page.getByRole('radio', {name: 'Preview'})).toBeVisible({timeout: 15_000});
+  expect(await page.locator('main script, main [onerror]').count()).toBe(0);
+  await page.getByRole('radio', {name: 'Markup'}).click();
   await expect(page.getByText('<img src=x onerror=alert(2)>')).toBeVisible({timeout: 15_000});
   expect(await page.locator('main img').count()).toBe(0);
   // A name with a space.
@@ -140,7 +144,7 @@ test('a pull request awaiting review is prefetched, reviewed offline, and the re
   await expect(page.getByText('src/new.ts').first()).toBeVisible();
   // Merge is online only: disabled offline, with the reason.
   await page.getByRole('link', {name: 'Conversation'}).click();
-  await expect(page.getByRole('button', {name: 'Merge', exact: true})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'Merge…', exact: true})).toBeDisabled();
   await expect(page.getByText('Merging needs a connection: it is not queued offline.')).toBeVisible();
   await page.getByRole('link', {name: 'Files'}).click();
   await expect(list).toBeVisible();
@@ -149,7 +153,7 @@ test('a pull request awaiting review is prefetched, reviewed offline, and the re
   await row.hover();
   await row.getByRole('button', {name: 'Comment on line 3'}).click();
   await page.getByRole('textbox', {name: 'Review comment'}).fill('Offline nit: name this better.');
-  await page.getByRole('button', {name: 'Add review comment'}).click();
+  await page.getByRole('button', {name: 'Start a review'}).click();
   await expect(page.getByText('Offline nit: name this better.')).toBeVisible();
   await expect(page.getByText('1 pending comment')).toBeVisible();
   // R: submit the review offline.

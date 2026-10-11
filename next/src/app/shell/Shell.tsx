@@ -5,22 +5,28 @@
 // nobody is signed in on this device, otherwise the app shell (sidebar,
 // the page, and the overlays: ⌘K palette, shortcuts help, sign-out warning).
 
-import {Outlet, useNavigate} from '@tanstack/react-router';
-import {runInAction} from 'mobx';
+import {Outlet, useNavigate, useRouterState} from '@tanstack/react-router';
+import {reaction, runInAction} from 'mobx';
 import {observer} from 'mobx-react-lite';
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {markOnce} from '../../sync/rum.ts';
-import {sitePath} from '../config.ts';
+import {classicHref} from '../classic.ts';
+import {sitePath, uiPath} from '../config.ts';
+import {classicOfLocation} from '../paths.ts';
 import {NoticeViewport, TooltipProvider} from '../../ui/index.ts';
 import {lazyComponent, whenIdle} from '../lazy.tsx';
 import {openCreate} from '../create.ts';
+import {goToCode} from '../goto.ts';
 import {lastBoard} from '../lastBoard.ts';
+import {undoLatest} from '../notices.ts';
 import {LoggedOut} from '../LoggedOut.tsx';
+import {pendingWebLogout} from '../../auth/weblogout.ts';
 import {signInHere} from '../session.ts';
 import {shortcuts, useShortcut} from '../shortcuts/index.ts';
 import {type App, useApp} from '../store.ts';
 import {ShellFrame} from './Frame.tsx';
 import {Sidebar} from './Sidebar.tsx';
+import {closeDrawer, drawerOpen, toggleSidebar} from './sidebar.ts';
 
 const Palette = lazyComponent(() => import('../palette/Palette.tsx').then((m) => m.Palette));
 const ShortcutsDialog = lazyComponent(() => import('./Overlays.tsx').then((m) => m.ShortcutsDialog));
@@ -71,6 +77,12 @@ const Overlays = observer(function Overlays({app}: {app: App}) {
 function GlobalShortcuts({app}: {app: App}) {
   const navigate = useNavigate();
   useEffect(() => shortcuts.attach(window), []);
+  useEffect(() => {
+    shortcuts.overlayOpen = () => app.ui.paletteOpen || Boolean(app.ui.create) || Boolean(app.ui.picker) || app.ui.shortcutsOpen || app.ui.unsyncedOpen;
+    return () => {
+      shortcuts.overlayOpen = () => false;
+    };
+  }, [app]);
   useShortcut('palette.open', () => {
     runInAction(() => {
       app.ui.paletteOpen = !app.ui.paletteOpen;
@@ -81,6 +93,7 @@ function GlobalShortcuts({app}: {app: App}) {
       app.ui.shortcutsOpen = true;
     });
   });
+  useShortcut('go.home', () => void navigate({to: '/'}));
   useShortcut('go.inbox', () => void navigate({to: '/notifications'}));
   useShortcut('go.issues', () => void navigate({to: '/issues'}));
   useShortcut('go.pulls', () => void navigate({to: '/pulls'}));
@@ -91,9 +104,41 @@ function GlobalShortcuts({app}: {app: App}) {
     const id = app.session && lastBoard(app.session.userId);
     void navigate(id ? {to: '/-/next/projects/$id', params: {id: String(id)}} : {to: '/-/next/boards'});
   });
+  useShortcut('sidebar.toggle', toggleSidebar);
+  useShortcut('undo', () => {
+    undoLatest(app);
+  });
+  // The drawer (narrow screens) closes when a page opens from it, when it opens a dialog (new issue, the
+  // palette, the help, the unsynced changes: never under the drawer), and with Esc.
+  const path = useRouterState({select: (st) => st.location.pathname});
+  const last = useRef(path);
+  useEffect(() => {
+    closeDrawer();
+    if (last.current !== path) {
+      const from = last.current;
+      runInAction(() => {
+        app.ui.previousPath = from;
+      });
+      last.current = path;
+    }
+  }, [app, path]);
+  useEffect(() => reaction(() => app.ui.paletteOpen || Boolean(app.ui.create) || app.ui.shortcutsOpen || app.ui.unsyncedOpen || Boolean(app.ui.picker), (open) => {
+    if (open) closeDrawer();
+  }), [app]);
+  useEffect(() => {
+    // Capture, before the shortcut registry: Esc that closes the drawer does nothing else (an issue's "back").
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !drawerOpen()) return;
+      e.stopPropagation();
+      closeDrawer();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
   useShortcut('go.code', () => {
-    const r = app.session?.data.pool.model('Repository').get(app.ui.repoOpen)?.data;
-    if (r) void navigate({to: '/-/next/code/$owner/$repo/$', params: {owner: r.owner_name, repo: r.name, _splat: 'src/-'}});
+    goToCode(app, navigate);
   });
   return null;
 }
@@ -111,7 +156,8 @@ function AppShell({app}: {app: App}) {
     // workspace stored by an earlier session): the first boot after signing in is a cold one.
     if (app.session?.data.workspace.current) markOnce('firstPaintFromCache');
     whenIdle(() => {
-      void Palette.preload().catch(() => undefined);
+      // The overlays a key opens (C, the pickers, ?, the indicator): there at once, offline too.
+      for (const overlay of [Palette, CreateIssue, IssuePicker, Notices, UnsyncedPanel, ShortcutsDialog]) void overlay.preload().catch(() => undefined);
       // After the first paint: the service worker precaches this build (offline boots, PLAN §5.2 step 5).
       void import('../sw.ts').then((m) => {
         m.startServiceWorker(app);
@@ -129,7 +175,7 @@ function AppShell({app}: {app: App}) {
   return (
     <TooltipProvider>
       <GlobalShortcuts app={app}/>
-      <ShellFrame sidebar={<Sidebar/>}>
+      <ShellFrame sidebar={<Sidebar/>} onBackdrop={closeDrawer}>
         <Outlet/>
       </ShellFrame>
       <Overlays app={app}/>
@@ -139,8 +185,18 @@ function AppShell({app}: {app: App}) {
 
 export function Shell() {
   const app = useApp();
-  if (!app.session) return <LoggedOut onSignIn={app.config.oauth ? () => {
-    signInHere(app);
-  } : undefined}/>;
+  const {pathname, searchStr} = useRouterState({select: (st) => ({pathname: st.location.pathname, searchStr: st.location.searchStr}), structuralSharing: true});
+  if (!app.session) {
+    // The classic page of this address (a public repository, an issue: readable without an account), and opting out.
+    const classic = classicOfLocation(pathname, searchStr);
+    // Signed out offline: Forgejo's own session ends once the device is online again (auth/weblogout.ts) — said.
+    const webSession = pendingWebLogout() ? 'You are signed out here. Forgejo\'s own session on this device ends as soon as it is back online.' : undefined;
+    return <LoggedOut appName={app.config.app_name} message={webSession} onSignIn={app.config.oauth ? () => {
+      signInHere(app);
+    } : undefined} classic={{
+      page: classicHref(app, classic),
+      optOut: `${uiPath(app.config, 'opt-out')}?redirect=${encodeURIComponent(sitePath(app.config, classic))}`,
+    }}/>;
+  }
   return <AppShell app={app}/>;
 }

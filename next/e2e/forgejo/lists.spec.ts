@@ -13,7 +13,7 @@
 
 import {expect, type Page, test} from '@playwright/test';
 import {api, labelId as repoLabelId, seed} from '../lib/api.ts';
-import {issueList as listbox, issueTitle, sidebarProp, signedIn, signIn, watch} from '../lib/app.ts';
+import {indicator, issueList as listbox, issueTitle, sidebarProp, signedIn, signIn, watch} from '../lib/app.ts';
 import {storedRecords} from '../lib/device.ts';
 import {ALICE, aliceAuth as alice, BASE, USER} from '../lib/env.ts';
 
@@ -141,15 +141,15 @@ test('a large list renders from the pool, filters/groups/sorts locally within a 
       await display('Ordering', 'Newest');
     });
     await step('label filter', async () => {
+      // One picker over every filter value, filtered as you type; labels stay open for more.
       await page.getByRole('button', {name: 'Filter'}).click();
-      await page.getByRole('menuitem', {name: 'Labels'}).click();
-      await page.getByRole('menuitemcheckbox', {name: 'bug'}).click();
-      await page.keyboard.press('Escape');
+      await page.getByRole('option', {name: 'bug', exact: true}).click();
       await page.keyboard.press('Escape');
     });
     await step('label filter cleared', async () => {
-      await page.getByRole('button', {name: /^Filter/}).click();
-      await page.getByRole('menuitem', {name: /^Label: bug/}).click();
+      // The filter button names the filter in effect ("Label: bug"); choosing it in the picker drops it.
+      await page.getByRole('button', {name: /^Label: bug/}).click();
+      await page.getByRole('option', {name: /^Label: bug/}).click();
     }, openCount);
     return timings;
   };
@@ -371,15 +371,19 @@ test('a change the server refuses is rolled back with a notice', async ({browser
   await page.keyboard.press('Escape');
   await expect(sidebarProp(page, 'Labels')).toContainText('ux');
   const notice = page.getByRole('alert').filter({hasText: 'failed'});
-  await expect(notice).toContainText('Adding the label “ux” failed');
+  await expect(notice).toContainText(new RegExp(`Adding the label “ux” to #${String(target.number)} failed`));
   await expect(notice).toContainText('You may not change labels here. It was undone and kept in Unsynced changes.');
   await expect(sidebarProp(page, 'Labels')).not.toContainText('ux');
   expect(key).toMatch(/^[\da-f-]{36}$/);
-  // Retry is a new intent (a new key); this time the server takes it.
+  // A refusal would be refused again: the notice has no Retry (QA round 2). The Unsynced panel keeps the change, and
+  // its Retry is a new intent (a new key); this time the server takes it.
+  await expect(notice.getByRole('button', {name: 'Retry'})).toHaveCount(0);
   await page.unroute(/\/api\/v1\/repos\/.*\/issues\/\d+\/labels$/);
   const write = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/labels'));
-  await notice.getByRole('button', {name: 'Retry'}).click();
+  await indicator(page).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Retry'}).first().click();
   const res = await write;
+  await page.keyboard.press('Escape');
   expect(res.request().headers()['idempotency-key']).not.toBe(key);
   await expect(sidebarProp(page, 'Labels')).toContainText('ux');
   await ctx.close();

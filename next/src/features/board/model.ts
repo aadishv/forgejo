@@ -10,8 +10,10 @@
 
 import {computed, createAtom, type IComputedValue, runInAction, untracked} from 'mobx';
 import type {App} from '../../app/store.ts';
+import {notify} from '../../app/notices.ts';
 import type {Applied, Pool} from '../../data/pool.ts';
 import type {Overlay} from '../../intents/overlay.ts';
+import {PROJECT_FIELD} from '../../intents/intents.ts';
 import {editing} from '../../intents/session.ts';
 import type {ProjectColumn} from '../../protocol/types.gen.ts';
 import {ListCursor} from '../issues/flags.ts';
@@ -95,12 +97,20 @@ export class BoardModel {
     this.rev.reportObserved();
     const field = `~board:${String(this.projectId)}`;
     const moves = this.overlay.fieldLayers('Issue', field) as [number, Move][];
+    // Issues put on a board or taken off it and not synced yet (issue.project): the last one per issue counts.
+    const placed = new Map(this.overlay.fieldLayers('Issue', PROJECT_FIELD) as [number, {project: number; column: number}][]);
     return untracked(() => {
       const t0 = performance.now();
       const issues = this.pool.model('Issue');
-      const cards = [...this.pool.model('ProjectIssue').by('project_id', this.projectId)].map((p) => ({
-        issueId: p.data.issue_id, column: p.data.column_id, sorting: p.data.sorting, id: p.id,
-      }));
+      const cards = [...this.pool.model('ProjectIssue').by('project_id', this.projectId)]
+        .filter((p) => (placed.get(p.data.issue_id)?.project ?? this.projectId) === this.projectId).map((p) => ({
+          issueId: p.data.issue_id, column: p.data.column_id, sorting: p.data.sorting, id: p.id,
+        }));
+      const on = new Set(cards.map((c) => c.issueId));
+      // A pending addition goes to the end of its column (as Forgejo puts it), after every synced card.
+      for (const [issueId, p] of placed) {
+        if (p.project === this.projectId && !on.has(issueId)) cards.push({issueId, column: p.column, sorting: Number.MAX_SAFE_INTEGER, id: Number.MAX_SAFE_INTEGER});
+      }
       let hidden = 0;
       for (const c of cards) if (!issues.get(c.issueId)) hidden++;
       const columns = [...this.pool.model('ProjectColumn').by('project_id', this.projectId)].map((e) => e.data);
@@ -144,7 +154,7 @@ export class BoardModel {
    * shows, the card included): an offline-capable intent (B9 card move).
    * Returns whether something was submitted.
    */
-  move(issueId: number, column: number, gap: number): boolean {
+  move(issueId: number, column: number, gap: number, say = true): boolean {
     const layout = untracked(() => this.layout.get());
     const m = moveTo(layout, issueId, column, gap);
     const from = findCard(layout, issueId);
@@ -153,7 +163,28 @@ export class BoardModel {
     editing(this.app).intents.submit({
       kind: 'board.move', issueId, repoId: issue.repo_id, projectId: this.projectId, columnId: m.column, position: m.position, baseColumn: from.column,
     });
+    // To another column (by key, menu or drag): said, with Undo (and ⌘Z) back to where it was.
+    if (say && m.column !== from.column) {
+      const title = layout.columns.find((c) => c.id === m.column)?.title ?? 'another column';
+      notify(this.app, {tone: 'neutral', title: `#${String(issue.number)} moved to “${title}”`, series: 'board.move', action: {label: 'Undo', run: () => {
+        this.move(issueId, from.column, from.index, false);
+      }}});
+    }
     return true;
+  }
+
+  /**
+   * Where a card goes in another column so that it keeps its rank (Linear's): after the cards that came before
+   * it on the server (sorting). Moving it there and back puts it where it was.
+   */
+  rankIn(issueId: number, column: number): number {
+    const layout = untracked(() => this.layout.get());
+    const list = layout.cards.get(column) ?? [];
+    const sortOf = (id: number) => untracked(() => [...this.pool.model('ProjectIssue').by('issue_id', id)].find((p) => p.data.project_id === this.projectId)?.data.sorting);
+    const mine = sortOf(issueId);
+    if (mine === undefined) return list.length;
+    const at = list.findIndex((id) => (sortOf(id) ?? Number.MAX_SAFE_INTEGER) > mine);
+    return at < 0 ? list.length : at;
   }
 
   dispose(): void {

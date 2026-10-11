@@ -47,18 +47,86 @@ import (
 // spaRoute is a canonical Forgejo URL the Next UI renders: a document
 // navigation to it from a browser that opted in gets the UI's index.html.
 // Segments: a literal, "{owner}" (a usable user or organization name),
-// "{repo}" (a usable repository name) or "{index}" (a number). Extend this
-// table when the UI supports a route (F3–F7).
+// "{repo}" (a usable repository name), "{index}" (a number) or "{temp}" (the
+// address "new-<uuid>" the UI gives an issue created offline until Forgejo
+// numbers it: opened later, the UI goes on to the issue it became). Extend
+// this table when the UI supports a route (F3–F7).
 var spaRoutes = [][]string{
-	{},                // the dashboard
-	{"notifications"}, // the inbox
-	{"issues"},        // the viewer's issues
-	{"pulls"},         // the viewer's pull requests
+	{},                    // the dashboard
+	{"notifications"},     // the inbox
+	{"issues"},            // the viewer's issues
+	{"pulls"},             // the viewer's pull requests
+	{"{owner}"},           // an owner's repositories (the profile's other tabs stay classic: profileTab)
+	{"{owner}", "{repo}"}, // a repository's home
 	{"{owner}", "{repo}", "issues"},
 	{"{owner}", "{repo}", "issues", "{index}"},
+	{"{owner}", "{repo}", "issues", "{temp}"},
 	{"{owner}", "{repo}", "pulls"},
 	{"{owner}", "{repo}", "pulls", "{index}"},
+	{"{owner}", "{repo}", "{code}"}, // a code address (codeAddress); the app opens its code view for it
 }
+
+// reTempIssue is the address of an issue created offline (next/src/features/issue/paths.ts TEMP_PATH).
+var reTempIssue = regexp.MustCompile(`^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$`)
+
+// codeAddress reports whether the segments after a repository name a code
+// page the UI renders (its code views below the base mirror these paths:
+// next/src/code/refs.ts parseCodePath) or a pull request's Files or
+// Commits tab: a pasted /{owner}/{repo}/src/branch/main/README.md opens
+// the UI's page, as the issue and pull request addresses do. Keep in step
+// with isSpaRoute in next/src/sw/routes.ts.
+func codeAddress(rest []string) bool {
+	if len(rest) == 0 {
+		return false
+	}
+	for _, s := range rest {
+		if s == "" || s == "." || s == ".." {
+			return false
+		}
+	}
+	number := func(s string) bool {
+		n, err := strconv.ParseInt(s, 10, 64)
+		return err == nil && n > 0
+	}
+	switch rest[0] {
+	case "src", "blame", "commits":
+		if len(rest) == 1 {
+			return true
+		}
+		switch rest[1] {
+		case "branch", "tag", "commit":
+			return len(rest) >= 3
+		}
+		return false
+	case "commit":
+		return len(rest) == 2 && shaPattern.MatchString(rest[1])
+	case "branches", "tags", "releases":
+		return len(rest) == 1
+	case "actions":
+		switch {
+		case len(rest) == 1:
+			return true
+		case rest[1] != "runs" || len(rest) < 3 || !number(rest[2]):
+			return false
+		case len(rest) == 3:
+			return true
+		case len(rest) == 5 || len(rest) == 7:
+			_, err := strconv.ParseUint(rest[4], 10, 32)
+			return rest[3] == "jobs" && err == nil && (len(rest) == 5 || rest[5] == "attempt" && number(rest[6]))
+		}
+		return false
+	case "compare":
+		spec := strings.Join(rest[1:], "/")
+		at := strings.Index(spec, "...")
+		return at > 0 && at+3 < len(spec)
+	case "pulls":
+		return len(rest) == 3 && number(rest[1]) && (rest[2] == "files" || rest[2] == "commits")
+	}
+	return false
+}
+
+// shaPattern is a full commit SHA (SHA-1 or SHA-256).
+var shaPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // spaRoute reports whether p (normalised, without the sub-path) is a
 // route of spaRoutes.
@@ -69,12 +137,18 @@ func spaRoute(p string) bool {
 	}
 next:
 	for _, route := range spaRoutes {
-		if len(route) != len(segs) {
+		code := len(route) > 0 && route[len(route)-1] == "{code}"
+		switch {
+		case code && (len(segs) < len(route) || !codeAddress(segs[len(route)-1:])):
+			continue
+		case !code && len(route) != len(segs):
 			continue
 		}
 		for i, want := range route {
 			seg := segs[i]
 			switch want {
+			case "{code}":
+				// The rest of the path, checked above.
 			case "{owner}":
 				if user_model.IsUsableUsername(seg) != nil {
 					continue next
@@ -87,6 +161,10 @@ next:
 				if n, err := strconv.ParseInt(seg, 10, 64); err != nil || n <= 0 {
 					continue next
 				}
+			case "{temp}":
+				if !reTempIssue.MatchString(seg) {
+					continue next
+				}
 			default:
 				if seg != want {
 					continue next
@@ -96,6 +174,24 @@ next:
 		return true
 	}
 	return false
+}
+
+// classicRequested reports whether the URL asks for the classic page
+// (?ui=classic): the UI's "Open in the classic UI" links on its canonical
+// routes, which would otherwise serve the UI again. The opt-in stays.
+func classicRequested(req *http.Request) bool {
+	return req.URL.Query().Get(protocol.NextUICookie) == "classic"
+}
+
+// profileTab reports whether req asks for a tab of an owner's classic
+// profile other than its repositories (/{owner}?tab=activity): the UI's
+// owner page shows the repositories only. Keep in step with next/src/sw/routes.ts.
+func profileTab(p string, req *http.Request) bool {
+	if strings.Contains(strings.Trim(p, "/"), "/") {
+		return false
+	}
+	tab := req.URL.Query().Get("tab")
+	return tab != "" && tab != "repositories"
 }
 
 // optedIn reports whether req is a document navigation (Sec-Fetch-Dest:
@@ -123,6 +219,8 @@ type spa struct {
 	build   string              // index.html's version the cache was last warmed for
 
 	warms sync.WaitGroup // running warm goroutines (tests wait for them)
+
+	preload preloader // the route views' build files (spa_preload.go)
 }
 
 // spaBody is a response body with its compressed variants.
@@ -614,6 +712,12 @@ func (s *spa) serveIndex(w http.ResponseWriter, req *http.Request, canonical boo
 	h := w.Header()
 	h.Set("Content-Security-Policy", b.csp)
 	h.Set("Referrer-Policy", "same-origin")
+	// The route's own view, fetched alongside the document (spa_preload.go).
+	site := normalizeSlashes(req.URL.Path)
+	if sub := setting.AppSubURL; sub != "" {
+		site = strings.TrimPrefix(site, sub)
+	}
+	s.preloadHeaders(h, site)
 	if canonical {
 		// The same URL is the classic page for other browsers: never
 		// stored in a shared cache, and the cache key includes the
@@ -633,7 +737,7 @@ func (s *spa) serveIndex(w http.ResponseWriter, req *http.Request, canonical boo
 // canonical route the UI supports (and there is a build): it gets the UI's
 // document instead of the classic page.
 func (s *spa) document(req *http.Request) bool {
-	if !optedIn(req) || !s.available() {
+	if !optedIn(req) || !s.available() || classicRequested(req) {
 		return false
 	}
 	p := normalizeSlashes(req.URL.Path)
@@ -644,7 +748,7 @@ func (s *spa) document(req *http.Request) bool {
 			p = p[len(sub):]
 		}
 	}
-	return spaRoute(p)
+	return spaRoute(p) && !profileTab(p, req)
 }
 
 // serveAsset answers GET /-/next/assets/*: hashed, immutable files.
@@ -671,8 +775,8 @@ func (s *spa) serveServiceWorker(w http.ResponseWriter, req *http.Request) {
 }
 
 // serveRoot answers every other path below /-/next: a file at the build's
-// root (no-cache), else — for a path without an extension — the document
-// (the UI's own routes, /-/next/callback included).
+// root (no-cache), else — for a path without an extension, or a code view's —
+// the document (the UI's own routes, /-/next/callback included).
 func (s *spa) serveRoot(w http.ResponseWriter, req *http.Request) {
 	if !s.available() {
 		notFound(w, req)
@@ -686,7 +790,9 @@ func (s *spa) serveRoot(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if path.Ext(p) != "" {
+	// A missing root file is not found; a code view's address keeps its file's or ref's dots
+	// (/-/next/code/{owner}/{repo}/src/branch/main/README.md, compare/release/0.2...main).
+	if path.Ext(p) != "" && !strings.HasPrefix(p, "code/") {
 		notFound(w, req)
 		return
 	}

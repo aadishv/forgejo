@@ -9,18 +9,19 @@
 // highlighting arriving re-renders that file's rows only, a scroll frame
 // mounts the rows coming into view. A floating header names the file in
 // view; `[` and `]` jump between files; ↑/↓ move a line cursor (Enter
-// comments on it). Rows share the longest line's width (they scroll
+// comments on it). A hunk's header expands the unchanged lines above it
+// (from the new file at the head, asked once). Rows share the longest line's width (they scroll
 // sideways together); headers and threads stay pinned to the view's left.
 
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {observer} from 'mobx-react-lite';
 import {ChevronDown, ChevronRight, FileDiff} from 'lucide-react';
-import {type CSSProperties, type KeyboardEvent, memo, type ReactNode, type Ref, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState} from 'react';
+import {type CSSProperties, type KeyboardEvent, memo, type ReactNode, type Ref, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {useShortcut, useShortcutScope} from '../../app/shortcuts/index.ts';
 import {ADD, DEL, type DiffFile, filePath} from '../../code/diff.ts';
 import {diffRows, fileAt, type Row} from '../../code/rows.ts';
 import type {Highlight} from '../../code/source.ts';
-import {CodeFileHeader, CodeLine, CodeTokens, DiffStat, EmptyState, IconButton, LineAction, LineNo} from '../../ui/index.ts';
+import {Button, CodeFileHeader, CodeLine, CodeTokens, cx, DiffStat, EmptyState, Icon, IconButton, LineAction, LineNo, ListRow} from '../../ui/index.ts';
 import {useSource} from './hooks.ts';
 import {LINE, useScrollMargin, useViewSize} from './Lines.tsx';
 
@@ -61,6 +62,11 @@ interface DiffViewProps {
   extras?: DiffExtras | undefined;
   /** The file in view changed (the file list follows). */
   onFile?: ((f: number) => void) | undefined;
+  /**
+   * A sticky bar (h-control, marked data-sticky-bar) is pinned above the diff in the scroller (the pull request's
+   * review bar): a file jumped to and the floating header go below it, not under it.
+   */
+  underBar?: boolean | undefined;
   ref?: Ref<DiffHandle>;
 }
 
@@ -88,8 +94,47 @@ function useHighlights(repoId: number, base: string, head: string, count: number
   return {hl, want};
 }
 
-export const DiffView = observer(function DiffView({repoId, base, head, files, scroller, extras, onFile, ref}: DiffViewProps) {
-  const {rows, fileRow} = useMemo(() => diffRows(files, extras ? {threads: extras.threads, notes: extras.notes, collapsed: extras.collapsed} : {}), [files, extras]);
+/** Unchanged lines one "expand" reveals above a hunk. */
+const EXPAND_STEP = 40;
+
+/** Hidden lines between hunks, expanded from the new file's content (asked once per file, cached by commit). */
+function useExpansion(repoId: number, head: string, files: readonly DiffFile[]) {
+  const src = useSource();
+  const [content, setContent] = useState<ReadonlyMap<number, readonly string[]>>(() => new Map());
+  const [revealed, setRevealed] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [failed, setFailed] = useState<ReadonlySet<number>>(() => new Set());
+  // The head file's highlighting, for the expanded lines (they read like the diff's own lines).
+  const [highlit, setHighlit] = useState<ReadonlyMap<number, Highlight | null>>(() => new Map());
+  const expand = useCallback((f: number, h: number, all: boolean) => {
+    const key = `${String(f)}:${String(h)}`;
+    const more = () => {
+      setRevealed((m) => new Map(m).set(key, all ? Number.MAX_SAFE_INTEGER : (m.get(key) ?? 0) + EXPAND_STEP));
+    };
+    const file = files[f];
+    if (content.has(f) || !file) {
+      more();
+      return;
+    }
+    src.raw(repoId, head, file.newPath).then((c) => {
+      if (c.kind !== 'text') throw new Error('not text');
+      setContent((m) => new Map(m).set(f, c.text.split('\n')));
+      more();
+      // Cached by (head, path): the same file at the same commit is highlighted once.
+      void src.highlight(repoId, `${head}/${file.newPath}`, file.newPath, c.text).then((h) => {
+        setHighlit((m) => new Map(m).set(f, h));
+      }, () => undefined);
+    }, () => {
+      setFailed((x) => new Set(x).add(f));
+    });
+  }, [src, repoId, head, files, content]);
+  return {content, revealed, failed, expand, highlit};
+}
+
+export const DiffView = observer(function DiffView({repoId, base, head, files, scroller, extras, onFile, underBar = false, ref}: DiffViewProps) {
+  const {content, revealed, failed, expand, highlit} = useExpansion(repoId, head, files);
+  const {rows, fileRow} = useMemo(() => diffRows(files, {
+    ...(extras ? {threads: extras.threads, notes: extras.notes, collapsed: extras.collapsed} : {}), content, revealed,
+  }), [files, extras, content, revealed]);
   const [place, margin] = useScrollMargin(scroller);
   useViewSize(scroller);
   // Stable per row list: the virtualizer recomputes every row's position (O(rows)) whenever these change.
@@ -99,7 +144,12 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
   }, [rows]);
   const getItemKey = useCallback((i: number) => rowKey(rows[i]), [rows]);
   const getScrollElement = useCallback(() => scroller, [scroller]);
-  const v = useVirtualizer({count: rows.length, getScrollElement, estimateSize, overscan: 40, scrollMargin: margin, getItemKey});
+  // What the sticky bar covers at the top of the view (its own height: no number here), measured once.
+  const [inset, setInset] = useState(0);
+  useLayoutEffect(() => {
+    setInset(underBar ? scroller?.querySelector<HTMLElement>('[data-sticky-bar]')?.offsetHeight ?? 0 : 0);
+  }, [underBar, scroller]);
+  const v = useVirtualizer({count: rows.length, getScrollElement, estimateSize, overscan: 40, scrollMargin: margin, getItemKey, scrollPaddingStart: inset});
   const {hl, want} = useHighlights(repoId, base, head, files.length);
   // The longest line (characters): every row is that wide, so tints span it and rows scroll sideways together.
   const chars = useMemo(() => {
@@ -115,8 +165,9 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
   const last = items.at(-1)?.index ?? 0;
   const fileFirst = fileAt(fileRow, first);
   const fileLast = fileAt(fileRow, last);
-  // The file whose rows are at the top of the view (not the overscan).
-  const topRow = items.find((it) => it.end - margin > (scroller?.scrollTop ?? 0))?.index ?? first;
+  // The file whose rows are at the top of the view, below the sticky bar (not the overscan); past the last row (the
+  // room after it), the last one.
+  const topRow = items.find((it) => it.end - margin > (scroller?.scrollTop ?? 0) + inset)?.index ?? Math.max(0, rows.length - 1);
   const current = fileAt(fileRow, topRow);
   useEffect(() => {
     for (let f = fileFirst; f <= fileLast; f++) want(f);
@@ -177,6 +228,8 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
     } else return;
     e.preventDefault();
   };
+  const lastFileStart = v.measurementsCache[fileRow[files.length - 1] ?? 0]?.start ?? 0;
+  const lastFileHeight = Math.max(0, v.getTotalSize() - (lastFileStart - margin));
   if (!files.length) return <EmptyState icon={FileDiff} title="No changes" description="These two commits have the same content."/>;
   const floating = topRow !== fileRow[current] && files[current];
   const active = rows[cursor];
@@ -184,7 +237,7 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
     <div ref={place} className="relative min-w-code font-mono" style={{'--code-chars': chars} as CSSProperties}>
       {/* The file in view, over the rows (it takes no space), pinned to the view's left edge. */}
       {floating && (
-        <div className="sticky top-0 z-sticky h-0">
+        <div className={cx('sticky z-sticky h-0', underBar ? 'top-control' : 'top-0')}>
           <div className="sticky left-0 w-view font-sans"><FileHeader file={floating} f={current} extras={extras} floating/></div>
         </div>
       )}
@@ -199,13 +252,15 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
           return (
             <div key={it.key} role="listitem" data-index={it.index} ref={measured ? v.measureElement : undefined}
               className="absolute inset-x-0 top-0" style={{transform: `translateY(${String(it.start - margin)}px)`}}>
-              <RowView row={row} id={`${listId}-${String(it.index)}`} active={it.index === cursor} file={files[row.f]} hl={hl[row.f]} extras={extras}/>
+              <RowView row={row} id={`${listId}-${String(it.index)}`} active={it.index === cursor} file={files[row.f]} hl={row.t === 'extra' ? highlit.get(row.f) : hl[row.f]}
+                extras={extras} onExpand={failed.has(row.f) ? undefined : expand}/>
             </div>
           );
         })}
       </div>
-      {/* Room after the last file: it can come to the top (`]`, the file in view). */}
-      <div aria-hidden className="h-view"/>
+      {/* Room after the last file, so that it can come to the top (`]`, the file in view): only what it lacks of a
+          view's height (a short last file), never a blank view under it. */}
+      <div aria-hidden style={{height: `max(0px, calc(var(--view-height) - ${String(lastFileHeight + inset)}px))`}}/>
     </div>
   );
 });
@@ -217,12 +272,17 @@ function rowKey(r: Row | undefined): string {
       return `${r.t}${String(r.f)}`;
     case 'hunk':
       return `h${String(r.f)}:${String(r.h)}`;
+    case 'extra':
+      return `x${String(r.f)}:${String(r.n)}`;
     case 'line': case 'thread':
       return `${r.t}${String(r.f)}:${String(r.l)}`;
   }
 }
 
-const RowView = memo(function RowView({row, id, active, file, hl, extras}: {row: Row; id: string; active: boolean; file: DiffFile | undefined; hl: Highlight | null | undefined; extras: DiffExtras | undefined}) {
+const RowView = memo(function RowView({row, id, active, file, hl, extras, onExpand}: {
+  row: Row; id: string; active: boolean; file: DiffFile | undefined; hl: Highlight | null | undefined; extras: DiffExtras | undefined;
+  onExpand: ((f: number, h: number, all: boolean) => void) | undefined;
+}) {
   if (!file) return null;
   switch (row.t) {
     case 'file':
@@ -234,25 +294,42 @@ const RowView = memo(function RowView({row, id, active, file, hl, extras}: {row:
     case 'hunk': {
       const h = file.hunks[row.h];
       if (!h) return null;
+      // Hidden unchanged lines above it (not for a deleted file: there is no new file to read them from).
+      const expandable = row.hidden > 0 && onExpand && file.status !== 'deleted' && !file.binary;
       return (
-        <CodeLine tone="hunk" gutter={<><LineNo n={0}/><LineNo n={0}/></>}>
+        <CodeLine tone="hunk" gutter={<><LineNo n={0}/><LineNo n={0}/><span className="inline-block w-3"/></>}
+          trailing={expandable && (
+            // Opaque (the row's own background): pinned to the right on a narrow view, it covers the header's text.
+            <span className="sticky right-0 flex items-center gap-1 bg-inherit pr-2 pl-2 font-sans">
+              <ExpandButton label={`Show ${String(Math.min(row.hidden, EXPAND_STEP))} more unchanged lines`} onClick={() => {
+                onExpand(row.f, row.h, false);
+              }}>{row.hidden > EXPAND_STEP ? `Expand ${String(EXPAND_STEP)}` : 'Expand'}</ExpandButton>
+              {row.hidden > EXPAND_STEP && <ExpandButton label={`Show all ${String(row.hidden)} unchanged lines`} onClick={() => {
+                onExpand(row.f, row.h, true);
+              }}>{`All ${String(row.hidden)}`}</ExpandButton>}
+            </span>
+          )}>
           {`@@ -${String(h.oldStart)},${String(h.oldLines)} +${String(h.newStart)},${String(h.newLines)} @@${h.section ? ` ${h.section}` : ''}`}
         </CodeLine>
       );
     }
+    case 'extra':
+      // `hl` is the head file's highlighting here (its line n - 1).
+      return (
+        <CodeLine gutter={<><LineNo n={row.o}/><LineNo n={row.n}/><span className="inline-block w-3"/></>}><CodeTokens text={row.text} hl={hl} line={row.n - 1}/></CodeLine>
+      );
     case 'line': {
       const l = file.lines[row.l];
       if (!l) return null;
       const comment = extras?.onComment;
       return (
         <CodeLine id={id} active={active} tone={l.k === ADD ? 'add' : l.k === DEL ? 'del' : 'none'}
-          gutter={<><LineNo n={l.o}/><LineNo n={l.n}/></>}
-          trailing={comment && (
+          gutter={<><LineNo n={l.o}/><LineNo n={l.n}/><span className="inline-block w-3 text-fg-subtle select-none">{l.k === ADD ? '+' : l.k === DEL ? '−' : ' '}</span></>}
+          action={comment && (
             <LineAction label={`Comment on line ${String(l.k === DEL ? l.o : l.n)}`} onClick={() => {
               comment(row.f, row.l);
             }}/>
           )}>
-          <span className="inline-block w-3 text-fg-subtle select-none">{l.k === ADD ? '+' : l.k === DEL ? '−' : ' '}</span>
           <CodeTokens text={l.t} hl={hl} line={row.l}/>
         </CodeLine>
       );
@@ -261,6 +338,11 @@ const RowView = memo(function RowView({row, id, active, file, hl, extras}: {row:
       return <div className="sticky left-0 w-view font-sans">{extras?.thread(row.f, row.l)}</div>;
   }
 });
+
+/** A hunk header's expand action (mouse and keyboard: a real button, in the header's own row). */
+function ExpandButton({label, onClick, children}: {label: string; onClick: () => void; children: string}) {
+  return <Button size="sm" variant="ghost" tooltip={label} aria-label={label} onClick={onClick}>{children}</Button>;
+}
 
 function emptyReason(f: DiffFile): string {
   if (f.binary) return 'Binary file not shown.';
@@ -283,3 +365,37 @@ const FileHeader = memo(function FileHeader({file, f, extras}: {file: DiffFile; 
     </CodeFileHeader>
   );
 });
+
+/** A commit's or a comparison's changes list opens by itself up to this many files. */
+const OPEN_FILES = 12;
+
+/**
+ * Above a commit's or a comparison's diff: how many files changed (with the lines added and removed) and the files,
+ * each a jump to its diff. Pinned to the view's left edge (wide lines scroll the diff sideways, not this).
+ */
+export function ChangedFiles({files, diff}: {files: readonly DiffFile[]; diff: {current: DiffHandle | null}}) {
+  const [open, setOpen] = useState(files.length <= OPEN_FILES);
+  const additions = files.reduce((n, f) => n + f.additions, 0);
+  const deletions = files.reduce((n, f) => n + f.deletions, 0);
+  return (
+    <section aria-label="Changed files" className="sticky left-0 w-view border-b border-border-subtle py-1">
+      <div className="flex h-control items-center gap-2 px-4 text-sm text-fg-muted">
+        <IconButton size="sm" icon={open ? ChevronDown : ChevronRight} label={open ? 'Hide the files' : 'Show the files'} aria-expanded={open} onClick={() => {
+          setOpen((o) => !o);
+        }}/>
+        <span className="text-fg">{files.length} {files.length === 1 ? 'file' : 'files'} changed</span>
+        <DiffStat additions={additions} deletions={deletions}/>
+      </div>
+      {open && files.map((f, i) => (
+        <ListRow role="presentation" key={`${filePath(f)}:${String(i)}`} href={`#${encodeURIComponent(filePath(f))}`} leading={<Icon icon={FileDiff} size="sm"/>}
+          trailing={<DiffStat additions={f.additions} deletions={f.deletions}/>}
+          onClick={(e) => {
+            e.preventDefault();
+            diff.current?.toFile(i);
+          }}>
+          <span title={filePath(f)}>{filePath(f)}</span>
+        </ListRow>
+      ))}
+    </section>
+  );
+}

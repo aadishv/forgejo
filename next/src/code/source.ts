@@ -19,12 +19,16 @@ import {RequestFailed} from '../app/api.ts';
 import {sitePath} from '../app/config.ts';
 import {appWorkerURL} from '../app/trusted.ts';
 import type {App, Session} from '../app/store.ts';
-import {APIPrefix, type APIBlame, type APITree, type APITreeEntry} from '../protocol/types.gen.ts';
+import {APIPrefix, type APIBlame, type APIMarkupRequest, type APIMarkupResponse, type APITree, type APITreeEntry} from '../protocol/types.gen.ts';
+import {netSignal} from '../sync/net.ts';
 import type {CodeWorkerApi, Highlight} from '../workers/code.worker.ts';
 import workerUrl from '../workers/code.worker.ts?worker&url';
 import {CodeCache} from './cache.ts';
+import type {RefKind} from './refs.ts';
 import {type DiffFile, filePath, parseDiff} from './diff.ts';
 import {HIGHLIGHT_MAX_CHARS, type Lang, langOf} from './lang.ts';
+
+export {langOf};
 
 export type {Highlight} from '../workers/code.worker.ts';
 
@@ -119,6 +123,8 @@ export interface CommitInfo {
   authorName: string;
   authorEmail: string;
   authorLogin: string;
+  /** The author's avatar when the commit is linked to a user ("" otherwise, and in commits cached before it was kept). */
+  authorAvatar?: string;
   date: string;
   parents: string[];
 }
@@ -156,14 +162,14 @@ export function decodeFile(bytes: ArrayBuffer, path: string): FileContent {
 interface ApiCommit {
   sha: string;
   commit: {message: string; author: {name: string; email: string; date: string}};
-  author?: {login?: string} | null;
+  author?: {login?: string; avatar_url?: string} | null;
   parents?: {sha: string}[] | null;
 }
 
 function commitInfo(c: ApiCommit): CommitInfo {
   return {
     sha: c.sha, message: c.commit.message, authorName: c.commit.author.name, authorEmail: c.commit.author.email,
-    authorLogin: c.author?.login ?? '', date: c.commit.author.date, parents: (c.parents ?? []).map((p) => p.sha),
+    authorLogin: c.author?.login ?? '', authorAvatar: c.author?.avatar_url ?? '', date: c.commit.author.date, parents: (c.parents ?? []).map((p) => p.sha),
   };
 }
 
@@ -174,6 +180,7 @@ export class CodeSource {
   /** The highlights waiting their turn (one runs at a time: see watched). */
   private queue: Promise<unknown> = Promise.resolve();
   private readonly inflight = new Map<string, Promise<unknown>>();
+  private readonly snippets = new Map<string, Promise<Highlight | null>>();
   /** Diffs parsed this session (key → files). */
   private readonly parsed = new Map<string, Promise<DiffFile[]>>();
   /** The same, once parsed (a diff opened again paints in its first frame). */
@@ -229,6 +236,14 @@ export class CodeSource {
     const p = this.queue.then(() => this.watchedNow(lang, lines, run));
     this.queue = p.catch(() => undefined);
     return p;
+  }
+
+  /**
+   * Starts the highlighter's worker now (it takes a moment to boot): a page that is about to show code (a README
+   * whose rendering is on its way) does not wait for it afterwards.
+   */
+  preheat(): void {
+    this.highlighter ??= this.spawn();
   }
 
   /**
@@ -300,16 +315,17 @@ export class CodeSource {
     return this.cache.peek<T>(key);
   }
 
-  private async request(api: 'sync' | 'v1', path: string, signal?: AbortSignal): Promise<Response> {
+  private async request(api: 'sync' | 'v1', path: string, signal?: AbortSignal, body?: unknown): Promise<Response> {
     if (!navigator.onLine) throw new NotCached('offline');
     const token = await this.s.auth.token();
     let res: Response;
     try {
       res = await fetch(sitePath(this.app.config, `${api === 'v1' ? '/api/v1' : APIPrefix}${path}`), {
-        headers: {Authorization: `Bearer ${token}`},
+        headers: {Authorization: `Bearer ${token}`, ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
+        ...(body === undefined ? {} : {method: 'POST', body: JSON.stringify(body)}),
         credentials: 'omit',
         redirect: 'manual',
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
+        signal: netSignal(60_000, signal),
       });
     } catch (err) {
       if (signal?.aborted) throw err;
@@ -472,11 +488,59 @@ export class CodeSource {
     });
   }
 
+  /** A snippet (a fenced code block of an issue) highlighted, kept in memory for the session (null: plain). */
+  snippet(lang: Lang, text: string): Promise<Highlight | null> {
+    if (text.length > HIGHLIGHT_MAX_CHARS) return Promise.resolve(null);
+    const key = `snip:${lang}:${text}`;
+    const hit = this.snippets.get(key);
+    if (hit) return hit;
+    let lines = 1;
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) lines++;
+    const p = this.watched(lang, lines, (api) => api.highlight(text, lang)).catch(() => null);
+    this.snippets.set(key, p);
+    // A few hundred blocks at most (each key holds its text).
+    for (const k of this.snippets.keys()) {
+      if (this.snippets.size <= 300) break;
+      this.snippets.delete(k);
+    }
+    return p;
+  }
+
   /** Highlighting already in memory (a file switched back to paints highlighted in its first frame). */
   peekHighlight(repoId: number, blobSha: string, path: string): Highlight | null | undefined {
     const lang = langOf(path);
     if (!lang) return null;
     return this.cache.peek(`hl:${String(repoId)}:${blobSha}:${lang}`);
+  }
+
+  /**
+   * A markup file (README.md, docs/…) rendered as Forgejo renders it on its file page (B9 /markup: relative links
+   * and images resolve from the file's directory at `ref`, root-relative ones from the repository's root). Cached
+   * by blob SHA and ref (the same text renders its links per ref); the HTML goes through the Trusted Types gate
+   * like every body.
+   */
+  rendered(repoId: number, blobSha: string, path: string, text: string, ref: {kind: RefKind; name: string}): Promise<string> {
+    return this.cached(`md2:${String(repoId)}:${blobSha}:${ref.kind}:${ref.name}:${path}`, async () => {
+      const body: APIMarkupRequest = {repo_id: repoId, ref: `${ref.kind}/${ref.name}`, path, text};
+      const res = await this.request('sync', '/markup', undefined, body);
+      return ((await readJson(res)) as APIMarkupResponse).html;
+    });
+  }
+
+  /**
+   * A markup file at a commit rendered by the server, which reads the file itself (B9 /markup with `commit`): one
+   * round trip for a README, without its tree and blob first. Immutable (by commit), cached like a blob.
+   */
+  renderedAt(repoId: number, commit: string, path: string, ref: {kind: RefKind; name: string}): Promise<string> {
+    return this.cached(CodeSource.renderedKey(repoId, commit, path, ref), async () => {
+      const body: APIMarkupRequest = {repo_id: repoId, ref: `${ref.kind}/${ref.name}`, path, text: '', commit};
+      const res = await this.request('sync', '/markup', undefined, body);
+      return ((await readJson(res)) as APIMarkupResponse).html;
+    });
+  }
+
+  static renderedKey(repoId: number, commit: string, path: string, ref: {kind: RefKind; name: string}): string {
+    return `mdc:${String(repoId)}:${commit}:${ref.kind}:${ref.name}:${path}`;
   }
 
   // ---- API v1 (immutable when addressed by full SHAs) ----

@@ -1,7 +1,7 @@
 // Copyright 2026 The Forgejo Authors. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import {createContext, type ReactNode, type Ref, useContext, useId} from 'react';
+import {type ButtonHTMLAttributes, createContext, type ReactNode, type Ref, useContext, useId} from 'react';
 import {cx} from './cx.ts';
 import {Tooltip} from './Tooltip.tsx';
 
@@ -13,19 +13,23 @@ export function PropertyList({children}: {children: ReactNode}) {
 /** The id of the enclosing Property's name (its value's buttons are labelled by it). */
 const NameContext = createContext<string | undefined>(undefined);
 
-/** One property: a muted name and its value. */
-export function Property({label, children}: {label: string; children: ReactNode}) {
+/**
+ * One property: a muted name and its value — beside it, or above it when `stacked` (a long value that must stay
+ * readable whole: a clone URL takes the pane's full width).
+ */
+export function Property({label, stacked, children}: {label: string; stacked?: boolean | undefined; children: ReactNode}) {
   const id = useId();
   return (
-    <div className="flex min-h-control items-start gap-2">
-      <dt id={id} className="flex h-control w-20 shrink-0 items-center text-sm text-fg-subtle">{label}</dt>
+    <div className={cx('flex min-h-control', stacked ? 'flex-col' : 'items-start gap-2')}>
+      <dt id={id} className={cx('flex shrink-0 items-center text-sm text-fg-subtle', stacked ? 'h-control-sm' : 'h-control w-20')}>{label}</dt>
       <dd className="flex min-w-0 flex-1 flex-col"><NameContext value={id}>{children}</NameContext></dd>
     </div>
   );
 }
 
-export interface PropertyButtonProps {
-  onClick: () => void;
+export interface PropertyButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'style' | 'children' | 'onClick'> {
+  /** Opens the editor (optional when the button is a popover's trigger: the popover opens it). */
+  onClick?: (() => void) | undefined;
   /** What clicking does ("Change labels"): the tooltip, with the shortcut. The accessible name is the property's name and the value. */
   label: string;
   shortcut?: string | undefined;
@@ -34,17 +38,23 @@ export interface PropertyButtonProps {
   ref?: Ref<HTMLButtonElement>;
 }
 
-/** A property's value that opens its editor (a picker): full width, wraps its content (label chips). */
-export function PropertyButton({onClick, label, shortcut, disabled, children, ref}: PropertyButtonProps) {
+/**
+ * A property's value that opens its editor (a picker): full width, wraps its content (label chips). It can be
+ * the trigger of a popover or a menu (asChild): their props pass through.
+ */
+export function PropertyButton({onClick, label, shortcut, disabled, children, ref, ...rest}: PropertyButtonProps) {
   const name = useContext(NameContext);
   const id = useId();
   return (
-    <Tooltip content={label} shortcut={shortcut} side="bottom">
+    // To the side: below, it would cover the next property (and take its first click).
+    <Tooltip content={label} shortcut={shortcut} side="left">
       <button
         ref={ref}
         id={id}
         type="button"
+        aria-haspopup="dialog"
         aria-labelledby={name ? `${name} ${id}` : undefined}
+        {...rest}
         disabled={disabled}
         onClick={onClick}
         className="interactive flex min-h-control w-full flex-wrap items-center gap-1 rounded-md px-2 py-1 text-left text-base text-fg hover:bg-hover disabled:pointer-events-none disabled:opacity-disabled"

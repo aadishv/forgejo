@@ -13,7 +13,7 @@ import {Pool} from '../data/pool.ts';
 import {ALICE, DEV, FakeForgejo, REPO} from '../test/fakeForgejo.ts';
 import {comment, issue, repo, T, user} from '../test/fakeSession.ts';
 import {World} from '../test/fakeTabs.ts';
-import {type IntentInput, intentOps, newIntent, remapIntent, tempNum, tempRefs} from './intents.ts';
+import {type IntentInput, intentOps, newIntent, remapIntent, tempNum, tempRefs, uuid, withIssue} from './intents.ts';
 import {Overlay} from './overlay.ts';
 import {requestFor} from './rest.ts';
 import {IntentDb} from './store.ts';
@@ -113,6 +113,13 @@ describe('overlay', () => {
     for (const off of offs) off();
   });
 
+  test('intentOps: resolving a conversation shows who resolved it at once (0: open again)', () => {
+    const on = newIntent({kind: 'comment.resolve', issueId: 7, repoId: 10, commentId: 33, resolved: true});
+    expect(intentOps(on, {userId: 5})).toEqual([{t: 'field', model: 'Comment', id: 33, field: 'resolve_doer_id', value: 5}]);
+    const off = newIntent({kind: 'comment.resolve', issueId: 7, repoId: 10, commentId: 33, resolved: false});
+    expect(intentOps(off, {userId: 5})).toEqual([{t: 'field', model: 'Comment', id: 33, field: 'resolve_doer_id', value: 0}]);
+  });
+
   test('intentOps: an exclusive label hides the siblings it replaces; keys are v4 UUIDs', () => {
     const i = newIntent({kind: 'issue.label', issueId: 7, repoId: 10, labelId: 3, add: true, drop: [4, 3]});
     expect(intentOps(i)).toEqual([
@@ -166,6 +173,7 @@ describe('requests (built at send time)', () => {
     expect(req({...r, kind: 'comment.create', tempId: crypto.randomUUID(), body: 'hi'})).toEqual({method: 'POST', api: 'v1', path: `${base}/comments`, body: {body: 'hi'}});
     expect(req({...r, kind: 'comment.edit', commentId: 33, text: 'b', baseText: 'a', baseVersion: 2, baseUpdated: T})).toEqual({method: 'PATCH', api: 'sync', path: '/comments/33/body', body: {body: 'b', expected_version: 2}});
     expect(req({...r, kind: 'comment.delete', commentId: 33})).toEqual({method: 'DELETE', api: 'v1', path: '/repos/dev/big/issues/comments/33'});
+    expect(req({...r, kind: 'comment.resolve', commentId: 33, resolved: true})).toEqual({method: 'PUT', api: 'sync', path: '/comments/33/resolved', body: {resolved: true}});
     expect(req({...r, kind: 'issue.body', text: 'b', baseText: 'a', baseVersion: 1})).toEqual({method: 'PATCH', api: 'sync', path: '/issues/7/body', body: {body: 'b', expected_version: 1}});
     expect(req({...r, kind: 'board.move', projectId: 5, columnId: 6, position: 0, baseColumn: 2})).toEqual({method: 'POST', api: 'sync', path: '/projects/5/columns/6/cards', body: {issue_id: 7, position: 0}});
     expect(req({...r, kind: 'pr.viewed', commitSha: 'abc', files: {'a.go': true}})).toEqual({method: 'PUT', api: 'sync', path: '/issues/7/viewed', body: {commit_sha: 'abc', files: {'a.go': true}}});
@@ -281,6 +289,88 @@ describe('the queue', () => {
     expect(new Set(s.calls.map((c) => c.body)).size).toBe(1);
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(server.issues.get(1)?.assignees.has(ALICE)).toBe(true);
+    world.close();
+  });
+
+  test('a refusal Forgejo answers as a server error fails at once with its words; no Retry offered (QA round 2: pinning a 4th issue)', async () => {
+    const server = new FakeForgejo();
+    const s = scripted(server, [answer(500, {message: 'the max number of pinned issues has been readched'})]);
+    const failed = vi.fn();
+    const world = new World(server, 1, {fetch: s.fetch, onFailed: failed});
+    const tab = world.tabs[0];
+    if (!tab) throw new Error('no tab');
+    tab.intents.submit({...ref, kind: 'issue.pin', pinned: true});
+    await world.settle();
+    expect(s.calls.length).toBe(1);
+    expect(tab.intents.pending).toBe(0);
+    expect(failed).toHaveBeenCalledTimes(1);
+    const [draft] = await new IntentDb(world.db).drafts();
+    expect(draft?.refused).toBe(true);
+    expect(draft?.reason).toMatch(/unpin one first/);
+    world.close();
+  });
+
+  test('adding a label Forgejo deleted meanwhile fails, named, instead of being acked silently (QA verify3)', async () => {
+    const server = new FakeForgejo();
+    server.deletedLabels.add(2);
+    const failed = vi.fn();
+    const world = new World(server, 1, {onFailed: failed, names: () => ({label: (id) => (id === 2 ? 'tmp' : ''), issue: (id) => (id === 1 ? 7 : undefined)})});
+    const tab = world.tabs[0];
+    if (!tab) throw new Error('no tab');
+    tab.intents.submit({...ref, kind: 'issue.label', labelId: 2, add: true, drop: []});
+    await world.settle();
+    expect(failed).toHaveBeenCalledTimes(1);
+    const [draft] = await new IntentDb(world.db).drafts();
+    expect(draft?.reason).toBe('The label no longer exists on Forgejo.');
+    expect(draft?.refused).toBe(true);
+    expect(draft?.issueNumber).toBe(7);
+    expect(withIssue(draft?.title ?? '', draft?.issueNumber)).toBe('Adding the label “tmp” to #7');
+    expect(untracked(() => issueLabelIds(tab.pool, tab.overlay, 1))).toEqual([]);
+    world.close();
+  });
+
+  test('a Go error name is no message: the 404 says what is gone (QA verify3: "IsErrIssueNotExist.")', async () => {
+    const server = new FakeForgejo();
+    const s = scripted(server, [answer(404, {message: 'IsErrIssueNotExist'})]);
+    const world = new World(server, 1, {fetch: s.fetch});
+    const tab = world.tabs[0];
+    if (!tab) throw new Error('no tab');
+    tab.intents.submit({...ref, kind: 'comment.create', tempId: uuid(), body: 'hi'});
+    await world.settle();
+    const [draft] = await new IntentDb(world.db).drafts();
+    expect(draft?.reason).toBe('The issue is not there any more, or you cannot see it.');
+    expect(draft?.text).toBe('hi');
+    world.close();
+  });
+
+  test('a 500 that says the same thing three times is a refusal, not retried forever', async () => {
+    const server = new FakeForgejo();
+    const no = () => answer(500, {message: 'something deterministic'}, {'Retry-After': '0'});
+    const s = scripted(server, [no(), no(), no(), no()]);
+    const world = new World(server, 1, {fetch: s.fetch});
+    const tab = world.tabs[0];
+    if (!tab) throw new Error('no tab');
+    tab.intents.submit({...ref, kind: 'issue.assignee', userId: ALICE, add: true});
+    await world.settle(60);
+    expect(s.calls.length).toBe(3);
+    expect(tab.intents.pending).toBe(0);
+    expect([...tab.intents.drafts.values()].map((d) => d.reason)).toEqual(['Something deterministic.']);
+    world.close();
+  });
+
+  test('a change retried after a server error does not hold back the issue\'s other properties', async () => {
+    const server = new FakeForgejo();
+    const s = scripted(server, [new TypeError('lost')]);
+    const world = new World(server, 1, {fetch: s.fetch, backoff: 60_000, maxBackoff: 60_000});
+    const tab = world.tabs[0];
+    if (!tab) throw new Error('no tab');
+    tab.intents.submit({...ref, kind: 'issue.assignee', userId: ALICE, add: true});
+    tab.intents.submit({...ref, kind: 'issue.label', labelId: 3, add: true, drop: []});
+    await world.settle();
+    // The assignee waits for its retry (a minute); the label went meanwhile.
+    expect(server.issues.get(1)?.labels.has(3)).toBe(true);
+    expect(server.issues.get(1)?.assignees.has(ALICE)).toBe(false);
+    expect(tab.intents.pending).toBe(1);
     world.close();
   });
 

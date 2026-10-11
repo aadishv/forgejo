@@ -12,6 +12,7 @@ import {isSpaRoute, sitePathOf} from '../sw/routes.ts';
 import {loadConfig, uiPath} from './config.ts';
 import {isChunkError} from './reload.ts';
 import {createAppRouter, type AppRouter} from './router.tsx';
+import {showingNotFound} from './shell/PageHeader.tsx';
 import {followOtherTabs, openSession} from './session.ts';
 import {readSplash, writeSplash} from './splash.ts';
 import {type App, createApp} from './store.ts';
@@ -93,11 +94,26 @@ function started(app: App, router: AppRouter): void {
   const remember = () => {
     const leaf = router.state.matches.at(-1);
     const shape = leaf?.staticData.skeleton;
-    if (!shape) return;
+    if (!shape || showingNotFound()) return;
     writeSplash({route: `${location.pathname}${location.search}`, skeleton: {shape, rows: shape === 'list' ? listRows : 0}});
   };
   remember();
   router.subscribe('onResolved', remember);
+  // A page reached from the sidebar (a click, then G H, Back…): the keys are the new page's (J/K, Enter on its
+  // cursor), not the sidebar link's, which kept the focus and its ring, and whose Enter reloaded the page it led to.
+  let lastPath = location.pathname;
+  router.subscribe('onResolved', () => {
+    if (location.pathname === lastPath) return;
+    lastPath = location.pathname;
+    // After the new page's first paint: a blur now forced a synchronous layout of the whole new page inside the
+    // navigation's task.
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const a = document.activeElement;
+        if (a instanceof HTMLElement && a.closest('aside[aria-label="Sidebar"]')) a.blur();
+      });
+    });
+  });
 }
 
 let listRows = 0;

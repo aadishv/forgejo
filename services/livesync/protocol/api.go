@@ -40,10 +40,13 @@ package protocol
 //	POST   /-/sync/api/projects/{id}/columns/{column}/cards APICardMove     → 204; 503 + Retry-After when concurrent moves kept it from completing (write:issue)
 //	PATCH  /-/sync/api/issues/{id}/body                     APIBodyEdit     → 200 APIBodyEdited, 409 APIBodyConflict (write:issue)
 //	PATCH  /-/sync/api/comments/{id}/body                   APIBodyEdit     → 200 APIBodyEdited, 409 APIBodyConflict (write:issue)
+//	PUT    /-/sync/api/comments/{id}/resolved               APICommentResolved → 204           (write:issue)
 //	GET    /-/sync/api/bodies/{model}/{id}                  → 200 APIBody (model IssueBody, Comment, Review or Release)
 //	GET    /-/sync/api/issues/{id}/viewed[?head={sha}]      → 200 APIViewedFiles (a pull request's issue)
 //	PUT    /-/sync/api/issues/{id}/viewed                   APIViewedUpdate → 200 APIViewedFiles (write:repository)
+//	PUT    /-/sync/api/issues/{id}/project                  APIIssueProject → 204              (write:issue)
 //	POST   /-/sync/api/markdown                             APIMarkdownRequest → 200 APIMarkdownResponse
+//	POST   /-/sync/api/markup                               APIMarkupRequest → 200 APIMarkupResponse (code unit)
 //	GET    /-/sync/api/repos/{id}/tree/{commit}[/{path}]    → 200 APITree               (immutable)
 //	GET    /-/sync/api/repos/{id}/raw/{commit}/{path}       → 200 the file's bytes      (immutable, ETag = blob SHA)
 //	GET    /-/sync/api/repos/{id}/blobs/{sha}               → 200 the blob's bytes      (immutable)
@@ -135,6 +138,25 @@ type APICardMove struct {
 	Cards    []APICard `json:"cards,omitempty"`
 }
 
+// APICommentResolved resolves (or unresolves) the conversation a pull
+// request's code comment starts (the classic Files tab's Resolve). The
+// classic checks: the pull request's poster, a writer of its pull requests
+// or an official reviewer (403); 422 for any other comment. Idempotent.
+type APICommentResolved struct {
+	Resolved bool `json:"resolved"`
+}
+
+// APIIssueProject puts an issue on a project's board (in ColumnID, or the
+// project's default column when 0; at the column's end) or, with
+// ProjectID 0, takes it off its project. An issue is on one project at a
+// time (Forgejo's rule): another project takes it off the first. The
+// classic issue sidebar's checks: the viewer writes the repository's issues
+// (403), the project is the repository's or its owner's and readable (404).
+type APIIssueProject struct {
+	ProjectID int64 `json:"project_id"`
+	ColumnID  int64 `json:"column_id,omitempty"`
+}
+
 // APICard is a card's position in APICardMove.Cards.
 type APICard struct {
 	IssueID int64 `json:"issue_id"`
@@ -211,6 +233,33 @@ const (
 type APIViewedUpdate struct {
 	CommitSHA string          `json:"commit_sha,omitempty"`
 	Files     map[string]bool `json:"files"`
+}
+
+// APIMarkupRequest renders a repository file's markup (markdown, by the
+// path's extension) as the classic file view does: relative links and
+// images resolve from the file's directory at Ref ("branch/main",
+// "tag/v1.0", "commit/<sha>"), root-relative ones from the repository's
+// root at Ref. Permission: the repository's code unit.
+//
+// With Commit (a full SHA) the server reads the file at Commit/Path itself
+// and Text is ignored: a repository's README renders in one round trip,
+// without the client fetching its tree and its blob first (the client asks
+// for README.md with the tree, before it knows the name: no such file is
+// an answer, Missing, not an error; 404 for no such commit, 413 for a file
+// too large to display).
+type APIMarkupRequest struct {
+	RepoID int64  `json:"repo_id"`
+	Ref    string `json:"ref"`
+	Path   string `json:"path"`
+	Text   string `json:"text"`
+	Commit string `json:"commit,omitempty"`
+}
+
+// APIMarkupResponse is the rendered (sanitized) HTML; Missing: the request
+// named a Commit and there is no file at Path.
+type APIMarkupResponse struct {
+	HTML    string `json:"html"`
+	Missing bool   `json:"missing,omitempty"`
 }
 
 // APIMarkdownRequest renders markdown previews in one request (at most 64

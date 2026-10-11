@@ -31,6 +31,7 @@ import (
 	user_model "forgejo.org/models/user"
 	webhook_model "forgejo.org/models/webhook"
 	actions_module "forgejo.org/modules/actions"
+	"forgejo.org/modules/gitrepo"
 	"forgejo.org/modules/json"
 	api "forgejo.org/modules/structs"
 	webhook_module "forgejo.org/modules/webhook"
@@ -139,6 +140,9 @@ func livesyncAPIScenario(t *testing.T, u *url.URL) {
 	t.Run("viewed", func(t *testing.T) { livesyncAPIViewed(t, user2, user5, read2, delta) })
 	t.Run("git", func(t *testing.T) { livesyncAPIGit(t, user2, user5) })
 	t.Run("markdown", func(t *testing.T) { livesyncAPIMarkdown(t, user2, user5) })
+	t.Run("markup", func(t *testing.T) { livesyncAPIMarkup(t, user2, user5) })
+	t.Run("issue project", func(t *testing.T) { livesyncAPIIssueProject(t, user2, user5) })
+	t.Run("resolve conversation", func(t *testing.T) { livesyncAPIResolve(t, user2, user5) })
 	t.Run("auth", func(t *testing.T) {
 		MakeRequest(t, livesyncAPI(t, "PATCH", "/issues/1/body", "", map[string]any{"body": "x"}), http.StatusUnauthorized)
 		MakeRequest(t, livesyncAPI(t, "GET", "/repos/1/blobs/x", "bad-token", nil), http.StatusUnauthorized)
@@ -652,6 +656,70 @@ func livesyncAPIMarkdown(t *testing.T, user2, user5 string) {
 	MakeRequest(t, livesyncAPI(t, "POST", "/markdown", user5, protocol.APIMarkdownRequest{RepoID: 2, Items: []string{"x"}}), http.StatusNotFound)
 	MakeRequest(t, livesyncAPI(t, "POST", "/markdown", user2, protocol.APIMarkdownRequest{Items: make([]string, 65)}), http.StatusRequestEntityTooLarge)
 	MakeRequest(t, livesyncAPI(t, "POST", "/markdown", user2, protocol.APIMarkdownRequest{Items: []string{strings.Repeat("x", 1<<20+1)}}), http.StatusRequestEntityTooLarge)
+}
+
+func livesyncAPIMarkup(t *testing.T, user2, user5 string) {
+	// A file below the root: relative links and images resolve from its directory at the ref (as its classic page
+	// does), root-relative ones from the repository's root.
+	text := "[a](more.md) [b](../x.go) [r](/README.md) ![i](../logo.svg)"
+	var out protocol.APIMarkupResponse
+	DecodeJSON(t, MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "branch/master", Path: "docs/guide.md", Text: text}), http.StatusOK), &out)
+	assert.Contains(t, out.HTML, `href="/user2/repo1/src/branch/master/docs/more.md"`)
+	assert.Contains(t, out.HTML, `href="/user2/repo1/src/branch/master/x.go"`)
+	assert.Contains(t, out.HTML, `href="/user2/repo1/src/branch/master/README.md"`)
+	assert.Contains(t, out.HTML, `src="/user2/repo1/media/branch/master/logo.svg"`)
+	// The file read by the server at a commit (a README in one round trip); no such file (an answer); no such commit.
+	repo1 := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	gitRepo, err := gitrepo.OpenRepository(t.Context(), repo1)
+	require.NoError(t, err)
+	head, err := gitRepo.GetBranchCommitID("master")
+	require.NoError(t, err)
+	commit, err := gitRepo.GetCommit(head)
+	require.NoError(t, err)
+	readme, err := commit.GetFileContent("README.md", 1024)
+	gitRepo.Close()
+	require.NoError(t, err)
+	DecodeJSON(t, MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "branch/master", Path: "README.md", Commit: head}), http.StatusOK), &out)
+	assert.False(t, out.Missing)
+	assert.Contains(t, out.HTML, strings.TrimSpace(strings.SplitN(strings.TrimLeft(readme, "# "), "\n", 2)[0]))
+	DecodeJSON(t, MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "branch/master", Path: "NOPE.md", Commit: head}), http.StatusOK), &out)
+	assert.True(t, out.Missing)
+	MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "branch/master", Path: "README.md", Commit: "abc"}), http.StatusNotFound)
+	// A private repository the viewer may not read; a malformed ref or path.
+	MakeRequest(t, livesyncAPI(t, "POST", "/markup", user5, protocol.APIMarkupRequest{RepoID: 2, Ref: "branch/master", Path: "a.md", Text: "x"}), http.StatusNotFound)
+	MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "master", Path: "a.md", Text: "x"}), http.StatusBadRequest)
+	MakeRequest(t, livesyncAPI(t, "POST", "/markup", user2, protocol.APIMarkupRequest{RepoID: 1, Ref: "branch/master", Path: "/a.md", Text: "x"}), http.StatusBadRequest)
+}
+
+func livesyncAPIIssueProject(t *testing.T, user2, user5 string) {
+	// Issue 11 of user2/repo1 on the repository's project 1 (its default column), then in column 2, then off it.
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{ProjectID: 1}), http.StatusNoContent)
+	unittest.AssertExistsAndLoadBean(t, &project_model.ProjectIssue{ProjectID: 1, IssueID: 11})
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{ProjectID: 1, ColumnID: 2}), http.StatusNoContent)
+	unittest.AssertExistsAndLoadBean(t, &project_model.ProjectIssue{ProjectID: 1, IssueID: 11, ProjectColumnID: 2})
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{}), http.StatusNoContent)
+	unittest.AssertNotExistsBean(t, &project_model.ProjectIssue{IssueID: 11})
+	// Another repository's project, a column of another project, a reader, nonsense.
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{ProjectID: 2}), http.StatusNotFound)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{ProjectID: 1, ColumnID: 5}), http.StatusNotFound)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user5, protocol.APIIssueProject{ProjectID: 1}), http.StatusForbidden)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/issues/11/project", user2, protocol.APIIssueProject{ColumnID: 2}), http.StatusBadRequest)
+	unittest.AssertNotExistsBean(t, &project_model.ProjectIssue{IssueID: 11})
+}
+
+func livesyncAPIResolve(t *testing.T, user2, user5 string) {
+	// Code comment 5 on pull request 2 of user2/repo1: resolved by user2 (a writer), again (idempotent), then unresolved.
+	for range 2 {
+		MakeRequest(t, livesyncAPI(t, "PUT", "/comments/5/resolved", user2, protocol.APICommentResolved{Resolved: true}), http.StatusNoContent)
+		unittest.AssertExistsAndLoadBean(t, &issues_model.Comment{ID: 5, ResolveDoerID: 2})
+	}
+	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/5/resolved", user2, protocol.APICommentResolved{}), http.StatusNoContent)
+	unittest.AssertExistsAndLoadBean(t, &issues_model.Comment{ID: 5, ResolveDoerID: 0})
+	// Not the poster, a writer or an official reviewer; not a code comment; no such comment.
+	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/5/resolved", user5, protocol.APICommentResolved{Resolved: true}), http.StatusForbidden)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/2/resolved", user2, protocol.APICommentResolved{Resolved: true}), http.StatusUnprocessableEntity)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/99999/resolved", user2, protocol.APICommentResolved{Resolved: true}), http.StatusNotFound)
+	unittest.AssertExistsAndLoadBean(t, &issues_model.Comment{ID: 5, ResolveDoerID: 0})
 }
 
 // livesyncTaskLog makes task's log the DBFS file name with lines, as the

@@ -60,9 +60,16 @@ function inOverlay(el: Element | null): boolean {
   return Boolean(overlay) && !overlay?.hasAttribute('data-shortcuts') && overlay?.getAttribute('data-state') !== 'closed';
 }
 
+/** Whether the element is inside a menu or dialog that is closing (Radix: data-state="closed" while it fades). */
+function leaving(el: Element): boolean {
+  return el.closest('[role="menu"],[role="dialog"],[role="alertdialog"]')?.getAttribute('data-state') === 'closed';
+}
+
 interface Binding {
   id: ShortcutId;
   run: () => void;
+  /** Whether it applies now (Open with a row under the cursor, a card move with a card): not, it is neither run nor offered. */
+  when: (() => boolean) | undefined;
   seq: number;
 }
 
@@ -74,6 +81,11 @@ export class ShortcutRegistry {
   private bindSeq = 0;
   private scopeSeq = 0;
   private pending: string[] = [];
+  /**
+   * Whether an overlay is opening or open (set by the shell): its keys are its own even before it has the focus —
+   * typing right after Ctrl+K must never run the page's shortcuts ("c" of a search creating an issue).
+   */
+  overlayOpen: () => boolean = () => false;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(opts: {apple?: boolean; keymap?: Readonly<Record<string, KeyDef>>} = {}) {
@@ -81,9 +93,9 @@ export class ShortcutRegistry {
     this.keymap = opts.keymap ?? KEYMAP;
   }
 
-  /** Binds a handler to a shortcut; returns the unbind function. */
-  bind(id: ShortcutId, run: () => void): () => void {
-    const b: Binding = {id, run, seq: ++this.bindSeq};
+  /** Binds a handler to a shortcut (applying while `when` says so); returns the unbind function. */
+  bind(id: ShortcutId, run: () => void, when?: () => boolean): () => void {
+    const b: Binding = {id, run, when, seq: ++this.bindSeq};
     this.bindings.push(b);
     return () => {
       const i = this.bindings.indexOf(b);
@@ -91,9 +103,19 @@ export class ShortcutRegistry {
     };
   }
 
-  /** The shortcuts something is bound to right now (the shortcuts help lists these). */
+  /** The shortcuts something is bound to right now. */
   bound(): Set<ShortcutId> {
     return new Set(this.bindings.map((b) => b.id));
+  }
+
+  /** The scopes active now, innermost first, global last (the shortcuts help lists them first). */
+  activeScopes(): Scope[] {
+    const out: Scope[] = [];
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      const s = this.scopes[i]?.scope;
+      if (s && !out.includes(s)) out.push(s);
+    }
+    return [...out, 'global'];
   }
 
   /**
@@ -104,7 +126,7 @@ export class ShortcutRegistry {
     const seen = new Set<ShortcutId>();
     for (const b of this.bindings) {
       const def = this.keymap[b.id];
-      if (def && def.scope !== 'global' && this.depth(def.scope) >= 0) seen.add(b.id);
+      if (def && def.scope !== 'global' && this.depth(def.scope) >= 0 && (b.when?.() ?? true)) seen.add(b.id);
     }
     return [...seen];
   }
@@ -116,7 +138,7 @@ export class ShortcutRegistry {
    */
   shadowed(id: ShortcutId): boolean {
     const def = this.keymap[id];
-    if (!def) return false;
+    if (!def?.keys) return false;
     const mine = this.depth(def.scope);
     return this.bindings.some((b) => {
       const other = this.keymap[b.id];
@@ -129,7 +151,7 @@ export class ShortcutRegistry {
     let best: Binding | undefined;
     let depth = -1;
     for (const b of this.bindings) {
-      if (b.id !== id) continue;
+      if (b.id !== id || !(b.when?.() ?? true)) continue;
       const def = this.keymap[b.id];
       const d = def ? this.depth(def.scope) : -1;
       if (d > depth || (d === depth && best && b.seq > best.seq)) {
@@ -159,11 +181,11 @@ export class ShortcutRegistry {
     return -1;
   }
 
-  private eligible(restricted: boolean): {binding: Binding; keys: string; depth: number}[] {
+  private eligible(restricted: boolean, onPage: boolean): {binding: Binding; keys: string; depth: number}[] {
     const out: {binding: Binding; keys: string; depth: number}[] = [];
     for (const b of this.bindings) {
       const def = this.keymap[b.id];
-      if (!def || (restricted && !def.anywhere)) continue;
+      if (!def || (restricted && !def.anywhere) || (def.page && !onPage) || !(b.when?.() ?? true)) continue;
       const depth = this.depth(def.scope);
       if (depth >= 0) out.push({binding: b, keys: def.keys, depth});
     }
@@ -183,9 +205,13 @@ export class ShortcutRegistry {
     if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return false;
     const chord = chordOf(e, this.apple);
     if (!chord) return false;
-    const target = e.target instanceof Element ? e.target : null;
-    const restricted = isTextField(target) || inOverlay(target);
-    const candidates = this.eligible(restricted);
+    const focused = e.target instanceof Element ? e.target : null;
+    // The focus still inside a menu or dialog that is fading out (its field, its item): the keys are the page's
+    // again. L, Esc, P typed quickly lost the P to the closing labels picker's field (found by the e2e triage flow).
+    const target = focused && leaving(focused) ? null : focused;
+    const restricted = isTextField(target) || inOverlay(target) || this.overlayOpen();
+    const onPage = !target || target === target.ownerDocument.body || target.closest('[data-shortcuts]') !== null;
+    const candidates = this.eligible(restricted, onPage);
     const attempt = (typed: string[]): boolean => {
       const keys = typed.join(' ');
       let best: {binding: Binding; depth: number} | undefined;
@@ -217,7 +243,13 @@ export class ShortcutRegistry {
     };
     if (this.pending.length && attempt([...this.pending, chord])) return true;
     this.reset();
-    return attempt([chord]);
+    if (attempt([chord])) return true;
+    // Shift and a letter that is no shortcut of its own: the letter's (the help shows "R"; Caps Lock). Not when
+    // the keymap gives Shift+letter a meaning that this page does not bind (Shift+S on a board must not change
+    // the status).
+    const letter = /^shift\+([a-z])$/.exec(chord)?.[1];
+    const meant = Object.values(this.keymap).some((d) => d.keys === chord || d.keys.startsWith(`${chord} `));
+    return letter !== undefined && !meant && attempt([letter]);
   }
 
   /** Listens on a window (the app does this once); returns the function that stops. */

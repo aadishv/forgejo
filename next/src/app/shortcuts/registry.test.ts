@@ -38,11 +38,27 @@ test('hints: one cap per Apple chord, words for other platforms', () => {
 test('every keymap entry is well-formed and keys are unique per scope', () => {
   const seen = new Set<string>();
   for (const [id, def] of Object.entries(KEYMAP)) {
-    expect(def.keys, id).toMatch(/^((mod|shift|alt)\+)*([a-z0-9]|enter|[?[\]])( ((mod|shift|alt)\+)*([a-z0-9]|enter|[?[\]]))*$/);
+    if (def.keys === '') continue; // a command without keys (the palette's)
+    expect(def.keys, id).toMatch(/^((mod|shift|alt)\+)*([a-z0-9]|enter|escape|backspace|arrow(up|down|left|right)|[?/[\]\\])( ((mod|shift|alt)\+)*([a-z0-9]|enter|escape|arrow(up|down|left|right)|[?/[\]\\]))*$/);
     const k = `${def.scope}|${def.keys}`;
     expect(seen.has(k), id).toBe(false);
     seen.add(k);
   }
+});
+
+test('Shift and a letter runs the letter\'s shortcut unless Shift+letter is one itself', () => {
+  const r = new ShortcutRegistry({apple: false});
+  const ran: string[] = [];
+  r.bind('review.start', () => ran.push('review'));
+  r.bind('inbox.pin', () => ran.push('pin'));
+  r.bind('issue.priority', () => ran.push('priority'));
+  r.pushScope('diff');
+  r.pushScope('inbox');
+  r.pushScope('issue');
+  const press = (key: string, shiftKey = false) => r.handle(new KeyboardEvent('keydown', {key, shiftKey, cancelable: true}));
+  press('R', true);
+  press('P', true);
+  expect(ran).toEqual(['review', 'pin']);
 });
 
 test('single keys, sequences, and the sequence timeout', () => {
@@ -86,6 +102,22 @@ test('text fields and open menus keep their keys, except `anywhere` bindings', (
   expect(press(r, 'c', {}, check)).toBe(true);
   expect(press(r, 'k', {metaKey: true}, input)).toBe(true);
   expect(ran).toEqual(['create', 'palette']);
+});
+
+test('a dialog or menu that is closing has let go of the keys, its field included (L, Esc, P typed quickly)', () => {
+  const r = new ShortcutRegistry({apple: true});
+  const ran: string[] = [];
+  r.bind('create', () => ran.push('create'));
+  const dialog = document.createElement('div');
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('data-state', 'open');
+  const field = document.createElement('input');
+  dialog.append(field);
+  document.body.append(dialog);
+  expect(press(r, 'c', {}, field)).toBe(false);
+  dialog.setAttribute('data-state', 'closed');
+  expect(press(r, 'c', {}, field)).toBe(true);
+  expect(ran).toEqual(['create']);
 });
 
 test('scoped bindings apply only while their scope is pushed; the innermost and latest win', () => {
@@ -167,11 +199,16 @@ test('scopes a view pushes together: the innermost decides a key they share (a b
 
 test('views that push several scopes: every key two of them share is meant, and the innermost one wins', () => {
   // [scopes from outer to inner, keys the inner one takes over on purpose]
-  const views: [string[], string[]][] = [[['list', 'issue'], []], [['list', 'inbox'], []], [['list', 'issue', 'board'], ['l']], [['list', 'diff'], []]];
+  // Esc: a list clears its selection; an issue page (which pushes no list scope) goes back. A list pushes the issue
+  // scope for the pickers only and never binds issue.back. (Enter in a diff's lines and on a board's column is theirs:
+  // local keys, handled by the focused element first.)
+  const views: [string[], string[]][] = [[['list', 'issue'], ['escape']], [['list', 'inbox'], []], [['list', 'issue', 'board'], ['escape', 'l']], [['list', 'diff'], []]];
   for (const [scopes, intended] of views) {
     const byKey = new Map<string, string[]>();
     for (const [id, def] of Object.entries(KEYMAP)) {
-      if (!scopes.includes(def.scope)) continue;
+      // Keys the focused element handles itself (a board column's Enter and arrows) and commands without keys do not
+      // go through the registry.
+      if (!scopes.includes(def.scope) || !def.keys || 'local' in def) continue;
       byKey.set(def.keys, [...byKey.get(def.keys) ?? [], id]);
     }
     const shared = [...byKey].filter(([, ids]) => ids.length > 1).map(([k]) => k);

@@ -24,6 +24,9 @@
 import {Entity} from '../data/entity.ts';
 import {DELETED, type OverlayOp} from './overlay.ts';
 
+/** The overlay field of an issue's pending project (`issue.project`): {project, column}. */
+export const PROJECT_FIELD = '~project';
+
 /** Every intent names the issue (or pull request) it is about and its repository (the sync group). */
 export interface IssueRef {
   /** The issue's id; a temporary (negative) id for an issue created locally (`tempNum`). */
@@ -93,14 +96,26 @@ export type Intent = Base & (
    */
   | {kind: 'comment.edit'; commentId: number; text: string; baseText: string; baseVersion: number; baseUpdated: string}
   | {kind: 'comment.delete'; commentId: number}
+  /** Resolve (or unresolve) the conversation a pull request's code comment starts (gap endpoint, QA verify3). */
+  | {kind: 'comment.resolve'; commentId: number; resolved: boolean}
   /** Submit a review, pinned to the commit the user saw; its code comments were drafted locally. */
   | {kind: 'review.submit'; tempId: string; commitId: string; event: 'APPROVED' | 'REQUEST_CHANGES' | 'COMMENT'; body: string; comments: ReviewComment[]}
+  /**
+   * Put the issue on a project's board (`columnId`, 0: the default column; at its end) or, with project 0, take it
+   * off its board (B9 gap endpoint; an issue is on one project at a time). `base`: the project the user saw.
+   */
+  | {kind: 'issue.project'; projectId: number; columnId: number; base: number}
   /** Move a card on a project board (B9): `position` among the cards the user saw in the column. */
   | {kind: 'board.move'; projectId: number; columnId: number; position: number; baseColumn: number}
   /** Mark files of a pull request viewed or not (B9), for its head `commitSha`. */
   | {kind: 'pr.viewed'; commitSha: string; files: Record<string, boolean>}
   /** Inbox: a notification read, unread or pinned. `issueId` may be 0 (a repository notification). */
   | {kind: 'notification.status'; notificationId: number; status: 'read' | 'unread' | 'pinned'; base: string}
+  /**
+   * Inbox: "Mark all read" in one request (API v1 `PUT /notifications`): the unread notifications updated up to
+   * `lastReadAt` — the newest of `notificationIds`, the ones the user saw — become read. issueId and repoId are 0.
+   */
+  | {kind: 'notification.readAll'; notificationIds: number[]; lastReadAt: string}
 );
 
 export type IntentKind = Intent['kind'];
@@ -151,9 +166,9 @@ export const CREATES = {'issue.create': 'Issue', 'comment.create': 'Comment', 'r
 export const POLICY: Record<IntentKind, 'set' | 'scalar' | 'text' | 'create' | 'idempotent'> = {
   'issue.create': 'create', 'issue.state': 'scalar', 'issue.title': 'scalar', 'issue.body': 'text', 'issue.deadline': 'scalar',
   'issue.milestone': 'scalar', 'issue.pin': 'idempotent', 'issue.lock': 'idempotent', 'issue.label': 'set', 'issue.assignee': 'set',
-  'issue.dependency': 'set', 'issue.subscribe': 'set', 'issue.reviewer': 'set', 'reaction': 'set', 'comment.create': 'create',
-  'comment.edit': 'text', 'comment.delete': 'idempotent', 'review.submit': 'create', 'board.move': 'idempotent', 'pr.viewed': 'idempotent',
-  'notification.status': 'idempotent',
+  'issue.dependency': 'set', 'issue.project': 'idempotent', 'issue.subscribe': 'set', 'issue.reviewer': 'set', 'reaction': 'set', 'comment.create': 'create',
+  'comment.edit': 'text', 'comment.delete': 'idempotent', 'comment.resolve': 'idempotent', 'review.submit': 'create', 'board.move': 'idempotent', 'pr.viewed': 'idempotent',
+  'notification.status': 'idempotent', 'notification.readAll': 'idempotent',
 };
 
 /**
@@ -162,21 +177,39 @@ export const POLICY: Record<IntentKind, 'set' | 'scalar' | 'text' | 'create' | '
  * (B9 applies it to the column as it is), so the board's moves go one at a time, in the order made.
  */
 export function chainOf(i: Intent): string {
-  if (i.kind === 'notification.status') return `n:${String(i.notificationId)}`;
+  // The inbox is one queue: a notification marked unread right after "Mark all read" reaches Forgejo after it.
+  if (i.kind === 'notification.status' || i.kind === 'notification.readAll') return 'n:inbox';
   if (i.kind === 'board.move') return `b:${String(i.projectId)}`;
+  // Properties that are independent of the rest of the issue have a queue each: one that Forgejo keeps refusing
+  // (or that waits for a retry) does not hold back the issue's other changes (QA round 2: a pin answered 500 held
+  // a priority change back for good). Their requests never read what the main queue changes.
+  const own = OWN_CHAIN[i.kind];
+  if (own) return `i:${String(i.issueId)}:${own}`;
   return `i:${String(i.issueId)}`;
 }
+
+/**
+ * Kinds with a queue of their own per issue. State, labels (status and priority are labels, and closing moves the
+ * status), title, body, milestone and comments stay in the issue's main queue, in the order made.
+ */
+const OWN_CHAIN: Partial<Record<IntentKind, string>> = {
+  'issue.pin': 'pin', 'issue.lock': 'lock', 'issue.subscribe': 'subscribe', 'issue.reviewer': 'reviewer', 'issue.deadline': 'deadline',
+  'issue.assignee': 'assignee', 'issue.dependency': 'dependency', 'issue.project': 'project', 'pr.viewed': 'viewed', 'reaction': 'reaction',
+  'comment.resolve': 'resolve',
+};
 
 /** The sync group whose position confirms the intent's write (X-Livesync-Sync-Id, B7). */
 export function groupOf(i: Intent, userId: number): string {
   switch (i.kind) {
     case 'notification.status':
+    case 'notification.readAll':
     case 'pr.viewed':
       return `user:${String(userId)}`;
     case 'issue.body':
     case 'comment.create':
     case 'comment.edit':
     case 'comment.delete':
+    case 'comment.resolve':
     case 'reaction':
     case 'review.submit':
     case 'issue.dependency':
@@ -190,7 +223,7 @@ export function groupOf(i: Intent, userId: number): string {
 export function tempRefs(i: Intent): number[] {
   const out: number[] = [];
   if (isTemp(i.issueId) && i.kind !== 'issue.create') out.push(i.issueId);
-  if ((i.kind === 'comment.edit' || i.kind === 'comment.delete' || i.kind === 'reaction') && isTemp(i.commentId)) out.push(i.commentId);
+  if ((i.kind === 'comment.edit' || i.kind === 'comment.delete' || i.kind === 'comment.resolve' || i.kind === 'reaction') && isTemp(i.commentId)) out.push(i.commentId);
   if (i.kind === 'issue.dependency' && isTemp(i.dependencyId)) out.push(i.dependencyId);
   return out;
 }
@@ -202,7 +235,7 @@ export function remapIntent(i: Intent, from: number, to: number): Intent {
     out = {...out, ...patch} as Intent;
   };
   if (i.issueId === from) set({issueId: to});
-  if ((i.kind === 'comment.edit' || i.kind === 'comment.delete' || i.kind === 'reaction') && i.commentId === from) set({commentId: to});
+  if ((i.kind === 'comment.edit' || i.kind === 'comment.delete' || i.kind === 'comment.resolve' || i.kind === 'reaction') && i.commentId === from) set({commentId: to});
   if (i.kind === 'issue.dependency' && i.dependencyId === from) set({dependencyId: to});
   return out;
 }
@@ -275,6 +308,9 @@ export function intentOps(i: Intent, ctx: OpsContext = {userId: 0}): OverlayOp[]
       return [{t: 'field', model: 'Comment', id: i.commentId, field: 'body', value: i.text}];
     case 'comment.delete':
       return [{t: 'field', model: 'Comment', id: i.commentId, field: DELETED, value: true}];
+    case 'comment.resolve':
+      // Who resolved it: the viewer (0: open), as Forgejo records it.
+      return [{t: 'field', model: 'Comment', id: i.commentId, field: 'resolve_doer_id', value: i.resolved ? ctx.userId : 0}];
     case 'review.submit': {
       const id = tempNum(i.tempId);
       const at = new Date(i.created).toISOString();
@@ -285,10 +321,14 @@ export function intentOps(i: Intent, ctx: OpsContext = {userId: 0}): OverlayOp[]
     }
     case 'board.move':
       return [field('Issue', `~board:${String(i.projectId)}`, {column: i.columnId, position: i.position})];
+    case 'issue.project':
+      return [field('Issue', PROJECT_FIELD, {project: i.projectId, column: i.columnId})];
     case 'pr.viewed':
       return Object.entries(i.files).map(([path, viewed]): OverlayOp => ({t: 'member', model: 'ViewedFile', owner: i.issueId, member: path, present: viewed}));
     case 'notification.status':
       return [{t: 'field', model: 'Notification', id: i.notificationId, field: 'status', value: i.status}];
+    case 'notification.readAll':
+      return i.notificationIds.map((id): OverlayOp => ({t: 'field', model: 'Notification', id, field: 'status', value: 'read'}));
   }
 }
 
@@ -296,6 +336,20 @@ export interface Names {
   label?: (id: number) => string;
   user?: (id: number) => string;
   milestone?: (id: number) => string;
+  /** An issue's number (undefined: not on the device, or not created yet). */
+  issue?: (id: number) => number | undefined;
+}
+
+/**
+ * A change's words naming its issue ("Closing #12", "Posting a comment on #12") for a notice outside the issue's
+ * page; the words alone without a number.
+ */
+export function withIssue(title: string, issueNumber: number | undefined): string {
+  if (issueNumber === undefined) return title;
+  const ref = `#${String(issueNumber)}`;
+  if (title.includes('the issue')) return title.replace('the issue', ref);
+  const prep = /^(Adding|Assigning)\b/.test(title) ? 'to' : /^(Removing|Unassigning)\b/.test(title) ? 'from' : 'on';
+  return `${title} ${prep} ${ref}`;
 }
 
 /** Short words for notices and the "Unsynced changes" panel ("Adding the label “bug”", …). */
@@ -340,14 +394,20 @@ export function describeIntent(i: Intent, names: Names = {}): string {
       return 'Editing a comment';
     case 'comment.delete':
       return 'Deleting a comment';
+    case 'comment.resolve':
+      return i.resolved ? 'Resolving a conversation' : 'Reopening a conversation';
     case 'review.submit':
       return 'Submitting a review';
     case 'board.move':
       return 'Moving a card';
+    case 'issue.project':
+      return i.projectId ? 'Putting the issue on a board' : 'Taking the issue off its board';
     case 'pr.viewed':
       return 'Marking files viewed';
     case 'notification.status':
       return i.status === 'read' ? 'Marking a notification read' : i.status === 'unread' ? 'Marking a notification unread' : 'Pinning a notification';
+    case 'notification.readAll':
+      return `Marking ${String(i.notificationIds.length)} ${i.notificationIds.length === 1 ? 'notification' : 'notifications'} read`;
   }
 }
 

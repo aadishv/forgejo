@@ -14,6 +14,8 @@ export interface Splash {
   theme?: ThemePreference;
   /** Sidebar width in CSS px; clamped to [SIDEBAR_MIN, SIDEBAR_MAX]. */
   sidebarWidth?: number;
+  /** The sidebar is collapsed (wide screens; narrow ones always show it as a drawer). */
+  sidebarHidden?: boolean;
   /** Shape of the last route, so the skeleton matches the page that renders. */
   skeleton?: {shape?: SkeletonShape; rows?: number};
   /**
@@ -58,6 +60,7 @@ export function applySplash(win: Window): void {
     const w = Math.round(Math.min(480, Math.max(180, s.sidebarWidth)));
     html.style.setProperty('--sidebar-width', `${w}px`);
   }
+  if (s.sidebarHidden === true) html.dataset.sidebar = 'hidden';
   html.dataset.shell = typeof s.user === 'string' && s.user ? 'app' : 'logged-out';
   const sk = s.skeleton ?? {};
   html.dataset.skeleton = sk.shape === 'detail' ? 'detail' : 'list';
@@ -70,7 +73,19 @@ export function applySplash(win: Window): void {
   if (typeof s.initial === 'string' && /^[\p{L}\p{N}]{1,2}$/u.test(s.initial)) {
     html.style.setProperty('--splash-initial', JSON.stringify(s.initial));
   }
+  // The first frame's "Sign in" works before the app's code is here (a slow network): an early click is
+  // remembered (the button says so) and the app signs in as soon as it starts (LoggedOut, EARLY_SIGN_IN).
+  win.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target.closest('[data-early="signin"]') : null;
+    if (!t || html.dataset.ready === '1') return;
+    html.dataset.early = 'signin';
+    t.setAttribute('aria-busy', 'true');
+    t.textContent = 'Signing in…';
+  }, true);
 }
+
+/** The attribute the splash script sets on <html> for a "Sign in" clicked before the app started. */
+export const EARLY_SIGN_IN = 'signin';
 
 /** Whether the splash carries the local DB marker (the same test applySplash makes). */
 export function hasUser(s: Splash): boolean {
@@ -96,8 +111,18 @@ export function writeSplash(patch: Partial<Splash>): void {
   }
 }
 
+/** Forgets the route to resume (the page on screen is not one to come back to: it was not found). */
+export function forgetRoute(): void {
+  try {
+    const {route: _route, ...rest} = readSplash();
+    localStorage.setItem(SPLASH_KEY, JSON.stringify(rest));
+  } catch {
+    // Storage blocked.
+  }
+}
+
 /** Other localStorage keys that remember something about a user (cleared at sign-out). */
-export const LOCAL_PREFS = ['forgejo-next:sidebar', 'forgejo-next:board', 'forgejo-next:views'] as const;
+export const LOCAL_PREFS = ['forgejo-next:sidebar', 'forgejo-next:board', 'forgejo-next:views', 'forgejo-next:home'] as const;
 
 /** Removes the local DB marker and what it says about the user (sign-out): the next boot shows the logged-out shell. */
 export function forgetUser(): void {
