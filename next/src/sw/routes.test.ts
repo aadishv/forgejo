@@ -21,6 +21,11 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/acme/repo/activity/hourly', '/acme/repo/activity/contributors/data', '/acme/repo/activity/weekly/x', '/acme/repo/activity_author_data']) {
     expect(isSpaRoute(p), p).toBe(false);
   }
+  // Labels and milestones (features/meta).
+  for (const p of ['/acme/repo/labels', '/acme/repo/milestones', '/acme/repo/milestones/new', '/acme/repo/milestone/3', '/acme/repo/milestone/3/edit']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/acme/repo/labels/1', '/acme/repo/milestones/3', '/acme/repo/milestone', '/acme/repo/milestone/0', '/acme/repo/milestone/x/edit', '/acme/repo/milestone/3/close']) {
+    expect(isSpaRoute(p), p).toBe(false);
+  }
   // The classic page asked for by name, and an owner's profile tabs, are classic.
   expect(isSpaRoute('/acme/repo/issues', '?ui=classic')).toBe(false);
   expect(isSpaRoute('/acme', '?tab=activity')).toBe(false);

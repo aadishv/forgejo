@@ -73,6 +73,15 @@ export function nextPathOf(path: string): string | undefined {
     return rest.length === 0 ? `${repoPath}/wiki` : wikiPath(a, b, v);
   }
   if (c === 'activity') return isSpaRoute(path) ? `${repoPath}/activity${rest[0] === undefined ? '' : `/${rest[0]}`}` : undefined;
+  // Labels, milestones, a milestone and its form (spaRoutes; features/meta).
+  if (c === 'labels') return rest.length === 0 ? `${repoPath}/labels` : undefined;
+  if (c === 'milestones') return rest.length === 0 ? `${repoPath}/milestones` : rest.length === 1 && rest[0] === 'new' ? `${repoPath}/milestones/new` : undefined;
+  if (c === 'milestone') {
+    const [n, sub] = rest;
+    if (n === undefined || !/^[1-9]\d{0,15}$/.test(n)) return undefined;
+    if (rest.length === 1) return `${repoPath}/milestone/${n}`;
+    return rest.length === 2 && sub === 'edit' ? `${repoPath}/milestone/${n}/edit` : undefined;
+  }
   const code = [c, ...rest].join('/');
   return parseCodePath(code) ? codePath(a, b, code) : undefined;
 }
@@ -104,7 +113,7 @@ export function appPageOf(classic: string): string {
   const query = at < 0 || classic[at] === '#' ? '' : classic.slice(at + 1).split('#')[0] ?? '';
   const mapped = wikiAddress(path, query) ?? nextPathOf(path) ?? nearestAppPage(path);
   if (mapped === undefined) return '/';
-  return query && !mapped.includes('?') && isListPath(mapped) ? `${mapped}?${query}` : mapped;
+  return query && !mapped.includes('?') && (isListPath(mapped) || /^\/[^/]+\/[^/]+\/(?:labels|milestones)$/.test(mapped)) ? `${mapped}?${query}` : mapped;
 }
 
 /**
@@ -120,11 +129,12 @@ function nearestAppPage(path: string): string | undefined {
   if (c === 'projects') return '/-/next/boards';
   if (c === 'issues' || c === 'pulls') return `/${enc(a)}/${enc(b)}/${c}`;
   if (c === 'wiki') return `/${enc(a)}/${enc(b)}/wiki`;
+  if (c === 'labels' || c === 'milestones' || c === 'milestone') return `/${enc(a)}/${enc(b)}/${c === 'labels' ? 'labels' : 'milestones'}`;
   return `/${enc(a)}/${enc(b)}`;
 }
 
 /** A repository's sections only the classic UI has (its More menu links them). */
-const CLASSIC_SECTIONS = new Set(['wiki', 'projects', 'settings', 'milestones', 'labels', 'packages', 'forks', 'stars', 'watchers', 'graph', 'find']);
+const CLASSIC_SECTIONS = new Set(['wiki', 'projects', 'settings', 'packages', 'forks', 'stars', 'watchers', 'graph', 'find']);
 
 /**
  * Whether a classic address is a page the classic UI is known to have and the app does not: a repository's
@@ -217,14 +227,18 @@ export function isCanonical(path: string, search = ''): boolean {
 
 /**
  * Whether a site path is a list an issue can be opened from (an issue's Esc goes back there): the inbox, the
- * viewer's issues and pull requests, a repository's lists, a board, the boards.
+ * viewer's issues and pull requests, a repository's lists, a milestone's, a board, the boards.
  */
 export function isListPath(path: string): boolean {
   const segs = segments(path);
   if (segs.length === 1) return segs[0] === 'notifications' || segs[0] === 'issues' || segs[0] === 'pulls';
   if (segs[0] === '-') return segs[1] === 'next' && (segs[2] === 'boards' || (segs[2] === 'projects' && segs.length === 4));
+  if (segs.length === 4 && segs[2] === 'milestone') return isOwnerName(segs[0] ?? '') && /^[1-9]\d{0,15}$/.test(segs[3] ?? '');
   return segs.length === 3 && isOwnerName(segs[0] ?? '') && (segs[2] === 'issues' || segs[2] === 'pulls');
 }
+
+/** A repository's sections that belong to its issues (the Issues tab, the repository's sidebar entry): labels, milestones. */
+export const ISSUE_SECTIONS: ReadonlySet<string> = new Set(['labels', 'milestones', 'milestone']);
 
 /** The repository ("owner/name", lower case) a route belongs to, if any (sidebar highlighting, the tabs). */
 export function repoOfPath(path: string): string | undefined {
@@ -235,6 +249,6 @@ export function repoOfPath(path: string): string | undefined {
   }
   const [a = '', b = '', c] = segs;
   if (segs.length < 2 || !isOwnerName(a) || !NAME.test(b)) return undefined;
-  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki') return undefined;
+  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki' && !ISSUE_SECTIONS.has(c)) return undefined;
   return `${a}/${b}`.toLowerCase();
 }
