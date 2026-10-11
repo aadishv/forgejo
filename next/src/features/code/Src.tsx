@@ -27,6 +27,7 @@ import {ago} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {hasRefs, type Loaded, refTable, useLoad, useSource} from './hooks.ts';
 import {Lines, type LinesHandle} from './Lines.tsx';
+import {GoToFile} from './FileFinder.tsx';
 import {RefMenu} from './RefMenu.tsx';
 import {RowList} from './RowList.tsx';
 import {CodeLink, codeTo, useCodeRows} from './nav.tsx';
@@ -149,6 +150,7 @@ const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blam
       <Button size="sm" variant="ghost" asChild>
         <CodeLink owner={owner} repo={repo} to={codeSplat('commits', at, at.path)}><Icon icon={History} size="sm"/>History</CodeLink>
       </Button>
+      <GoToFile owner={owner} repo={repo} repoId={repoId} at={at}/>
       {/* Which view of the file this is, as a switch (a link named after the other view read as a pressed button). */}
       {file && (
         <SegmentedControl label="Show the file as" value={blame ? 'blame' : 'src'} onChange={(v) => {
@@ -193,12 +195,13 @@ function Entries({owner, repo, repoId, at, tree, scroller}: {owner: string; repo
     <RowList items={entries} scroller={scroller} label="Files" keyOf={(e) => e.name}
       row={entryParts}
       onOpen={rows.onOpen} linkOf={rows.linkOf}
-      // Hover or the cursor: fetch the entry and highlight it, so opening it paints at once.
+      // Hover or the cursor: fetch the entry and highlight it (idle: never ahead of what is on screen, the newest
+      // intents first), so opening it paints at once.
       onIntent={(e) => {
         const p = pathOf(e);
         if (e.type === 'tree') void src.tree(repoId, at.sha, p).catch(() => undefined);
         else if (e.type === 'blob') {
-          void src.blob(repoId, e.sha, p, e.size).then((c) => (c.kind === 'text' ? src.highlight(repoId, e.sha, p, c.text) : null)).catch(() => undefined);
+          void src.blob(repoId, e.sha, p, e.size).then((c) => (c.kind === 'text' ? src.highlight(repoId, e.sha, p, c.text, 'idle') : null)).catch(() => undefined);
         }
       }}/>
   );
@@ -216,7 +219,11 @@ const FileView = observer(function FileView(props: FileProps) {
   const {repoId, entry, at} = props;
   const src = useSource();
   const key = CodeSource.blobKey(repoId, entry.sha);
-  const content = useLoad(key, () => src.peek<FileContent>(key), () => src.blob(repoId, entry.sha, at.path, entry.size));
+  // The stored highlighting is read with the file (IndexedDB, in parallel): a file highlighted on an earlier visit
+  // paints highlighted in its first frame, not plain and then highlighted.
+  const content = useLoad(key, () => src.peek<FileContent>(key), async () => (await Promise.all([
+    src.blob(repoId, entry.sha, at.path, entry.size), src.loadHighlight(repoId, entry.sha, at.path),
+  ]))[0]);
   if (content.state !== 'ready') return <Unloaded loaded={content} what="This file" skeleton={<CodeSkeleton/>}/>;
   const c = content.value;
   switch (c.kind) {
