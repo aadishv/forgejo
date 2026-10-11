@@ -9,7 +9,7 @@ import {Link, useRouterState} from '@tanstack/react-router';
 import {CircleDot, GitPullRequest, Home, Inbox, KanbanSquare, PanelLeftClose, Search, SquarePen} from 'lucide-react';
 import {runInAction} from 'mobx';
 import {observer} from 'mobx-react-lite';
-import {memo, useCallback, useEffect, useState} from 'react';
+import {memo, useCallback, useEffect, useRef, useState} from 'react';
 import {groupId, groupKind} from '../../data/models.ts';
 import {Avatar, IconButton, NavGroup, NavHeading, NavItem, ResizeHandle} from '../../ui/index.ts';
 import {repoOfPath} from '../paths.ts';
@@ -55,19 +55,26 @@ const PREFS = LOCAL_PREFS[0];
 /** Repositories listed per owner before "N more". */
 const SHOWN = 10;
 
-function readClosed(): Set<string> {
+/** The sidebar's remembered state: folded owners, and owners whose repositories are all listed ("N more" taken). */
+interface Prefs {
+  closed: Set<string>;
+  expanded: Set<string>;
+}
+
+function readPrefs(): Prefs {
+  const strings = (x: unknown) => new Set(Array.isArray(x) ? x.filter((y): y is string => typeof y === 'string') : []);
   try {
     const v: unknown = JSON.parse(localStorage.getItem(PREFS) ?? '{}');
-    const closed = v && typeof v === 'object' ? (v as {closed?: unknown}).closed : undefined;
-    return new Set(Array.isArray(closed) ? closed.filter((x): x is string => typeof x === 'string') : []);
+    const o = v && typeof v === 'object' ? v as {closed?: unknown; expanded?: unknown} : {};
+    return {closed: strings(o.closed), expanded: strings(o.expanded)};
   } catch {
-    return new Set();
+    return {closed: new Set(), expanded: new Set()};
   }
 }
 
-function writeClosed(closed: Set<string>): void {
+function writePrefs(p: Prefs): void {
   try {
-    localStorage.setItem(PREFS, JSON.stringify({closed: [...closed]}));
+    localStorage.setItem(PREFS, JSON.stringify({closed: [...p.closed], expanded: [...p.expanded]}));
   } catch {
     // Storage blocked.
   }
@@ -130,12 +137,13 @@ const OwnerAvatar = observer(function OwnerAvatar({id, login}: {id: number; logi
   return <Avatar size="sm" name={login} src={src}/>;
 });
 
-const sameOwner = (a: {owner: Owner; open: boolean}, b: {owner: Owner; open: boolean}) =>
-  a.open === b.open && a.owner.id === b.owner.id && a.owner.login === b.owner.login && a.owner.repos.join('/') === b.owner.repos.join('/');
+const sameOwner = (a: {owner: Owner; open: boolean; all: boolean}, b: {owner: Owner; open: boolean; all: boolean}) =>
+  a.open === b.open && a.all === b.all && a.owner.id === b.owner.id && a.owner.login === b.owner.login && a.owner.repos.join('/') === b.owner.repos.join('/');
 
 /** Re-renders only when its owner, repositories or open state change (owners() builds new objects each time). */
-const OwnerGroup = memo(function OwnerGroup({owner, open, onToggle}: {owner: Owner; open: boolean; onToggle: (login: string, open: boolean) => void}) {
-  const [all, setAll] = useState(false);
+const OwnerGroup = memo(function OwnerGroup({owner, open, all, onToggle}: {
+  owner: Owner; open: boolean; all: boolean; onToggle: (login: string, change: {open?: boolean; all?: boolean}) => void;
+}) {
   // The repository on screen: its row stays listed (after the first ten, it joins them) and, folded, the owner's
   // row is current in its place: the sidebar always says where you are.
   const prefix = `${owner.login.toLowerCase()}/`;
@@ -143,16 +151,29 @@ const OwnerGroup = memo(function OwnerGroup({owner, open, onToggle}: {owner: Own
     const key = repoOfPath(s.location.pathname);
     return key?.startsWith(prefix) ? owner.repos.find((r) => r.toLowerCase() === key.slice(prefix.length)) : undefined;
   }});
+  // The control that replaces the one clicked takes the focus (not <body>).
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    document.querySelector<HTMLElement>(`[data-sidebar-more="${CSS.escape(owner.login)}"]`)?.focus();
+  }, [all, owner.login]);
   const first = owner.repos.slice(0, SHOWN);
   const shown = all ? owner.repos : here !== undefined && !first.includes(here) ? [...first, here] : first;
   const more = owner.repos.length - shown.length;
   return (
     <NavGroup label={owner.login} leading={<OwnerAvatar id={owner.id} login={owner.login}/>} open={open} holdsCurrent={here !== undefined} onOpenChange={(o) => {
-      onToggle(owner.login, o);
+      onToggle(owner.login, {open: o});
     }} link={<Link to="/$owner" params={{owner: owner.login}} activeOptions={{exact: true, includeSearch: false}}/>}>
       {shown.map((name) => <RepoItem key={name} owner={owner.login} name={name}/>)}
-      {more > 0 && <NavItem inset label={`${String(more)} more`} onClick={() => {
-        setAll(true);
+      {/* "N more" lists them all, "Show fewer" folds them back; remembered, as a folded owner is (QA: no way back). */}
+      {more > 0 && <NavItem inset label={`${String(more)} more`} data-sidebar-more={owner.login} onClick={() => {
+        refocus.current = true;
+        onToggle(owner.login, {all: true});
+      }}/>}
+      {all && owner.repos.length > SHOWN && <NavItem inset label="Show fewer" data-sidebar-more={owner.login} onClick={() => {
+        refocus.current = true;
+        onToggle(owner.login, {all: false});
       }}/>}
     </NavGroup>
   );
@@ -160,13 +181,15 @@ const OwnerGroup = memo(function OwnerGroup({owner, open, onToggle}: {owner: Own
 
 const Workspace = observer(function Workspace() {
   const session = useSession();
-  const [closed, setClosed] = useState(readClosed);
-  const toggle = useCallback((login: string, open: boolean) => {
-    setClosed((prev) => {
-      const next = new Set(prev);
-      if (open) next.delete(login);
-      else next.add(login);
-      writeClosed(next);
+  const [prefs, setPrefs] = useState(readPrefs);
+  const toggle = useCallback((login: string, change: {open?: boolean; all?: boolean}) => {
+    setPrefs((prev) => {
+      const next = {closed: new Set(prev.closed), expanded: new Set(prev.expanded)};
+      if (change.open === true) next.closed.delete(login);
+      else if (change.open === false) next.closed.add(login);
+      if (change.all === true) next.expanded.add(login);
+      else if (change.all === false) next.expanded.delete(login);
+      writePrefs(next);
       return next;
     });
   }, []);
@@ -175,7 +198,7 @@ const Workspace = observer(function Workspace() {
   return (
     <>
       <NavHeading>Workspace</NavHeading>
-      {list.map((o) => <OwnerGroup key={o.id} owner={o} open={!closed.has(o.login)} onToggle={toggle}/>)}
+      {list.map((o) => <OwnerGroup key={o.id} owner={o} open={!prefs.closed.has(o.login)} all={prefs.expanded.has(o.login)} onToggle={toggle}/>)}
     </>
   );
 });
@@ -241,7 +264,7 @@ export function Sidebar() {
       <SidebarTop>
         <div className="flex min-w-0 items-center gap-1">
           <div className="min-w-0 flex-1"><AccountMenu/></div>
-          <IconButton size="sm" icon={PanelLeftClose} label="Hide the sidebar" shortcut={shortcutHint('sidebar.toggle')} onClick={toggleSidebar}/>
+          <IconButton size="sm" icon={PanelLeftClose} label="Hide the sidebar" shortcut={shortcutHint('sidebar.toggle')} onClick={toggleSidebar} data-sidebar-toggle=""/>
         </div>
         <SidebarCreate/>
         <SidebarSearch/>

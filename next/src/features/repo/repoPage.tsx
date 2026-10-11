@@ -18,6 +18,7 @@ import {Missing} from '../../app/Missing.tsx';
 import {classicOfHere} from '../../app/session.ts';
 import {type RepoMatch, repoGone, useHold} from '../../app/repo.ts';
 import {PageHeader} from '../../app/shell/PageHeader.tsx';
+import {rememberOpened} from '../../app/create.ts';
 import {useApp, useSession} from '../../app/store.ts';
 import {withEnd} from '../../code/refs.ts';
 import {Icon, type LucideIcon, MenuItem, MenuLabel, MenuSeparator, MoreMenu, TabLink, TabNav, TextLink} from '../../ui/index.ts';
@@ -49,6 +50,20 @@ export function useRepoPage(): {owner: string; repo: string; repoId: number | un
       off();
     };
   }, [app, data, router, owner, repo, repoId]);
+  // Renamed (or transferred) while its page is open: the address, breadcrumb and tab title follow (QA: they kept the
+  // old name while the heading and the sidebar had the new one). The same page under the new name, in place.
+  useEffect(() => {
+    if (repoId === undefined) return undefined;
+    return reaction(() => data.pool.model('Repository').get(repoId)?.get('full_name'), (full) => {
+      if (!full || full.toLowerCase() === `${owner}/${repo}`.toLowerCase()) return;
+      const [o = '', r = ''] = full.split('/');
+      const from = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+      const path = location.pathname;
+      const at = path.indexOf(from);
+      if (at < 0 || !['/', ''].includes(path.charAt(at + from.length))) return;
+      void router.navigate({href: `${path.slice(0, at)}/${encodeURIComponent(o)}/${encodeURIComponent(r)}${path.slice(at + from.length)}${location.search}${location.hash}`, replace: true});
+    });
+  }, [data, router, owner, repo, repoId]);
   // The new-issue dialog (C) creates in the repository on screen.
   useConfirmAccess(app, owner, repo, repoId);
   useEffect(() => {
@@ -57,6 +72,7 @@ export function useRepoPage(): {owner: string; repo: string; repoId: number | un
       app.ui.repoOpen = repoId;
       app.ui.recentRepo = repoId;
     });
+    if (app.session) rememberOpened(app.session.userId, repoId);
     return () => {
       runInAction(() => {
         if (app.ui.repoOpen === repoId) app.ui.repoOpen = 0;

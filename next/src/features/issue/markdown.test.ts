@@ -3,7 +3,7 @@
 
 import {expect, test} from 'vitest';
 import {scrub} from '../../app/trusted.ts';
-import {appLinks, toggleTask} from './Markdown.tsx';
+import {appLinks, onlyTicks, toggleTask} from './Markdown.tsx';
 
 test('a task is ticked by its index, outside fenced code', () => {
   const text = '- [ ] one\n```\n- [ ] not a task\n```\n1. [x] two\n  * [ ] three';
@@ -32,4 +32,12 @@ test('rendered links to pages the app renders point at the app', () => {
     // A profile is a canonical route (the app's owner page): the link stays as Forgejo wrote it.
     `${o}/alice`, '/acme/site/issues/3', '/acme/site/pulls/4?tab=files', '/acme/site/wiki/Home', 'https://example.com/x', '/alice',
   ]);
+});
+
+test('onlyTicks: an edit of the ticks only shows on the synced rendering', () => {
+  const synced = 'Body.\n\n- [ ] task a\n- [ ] task b\n';
+  expect(onlyTicks('Body.\n\n- [x] task a\n- [ ] task b\n', synced)).toEqual([true, false]);
+  expect(onlyTicks('Body!\n\n- [x] task a\n- [ ] task b\n', synced)).toBeUndefined();
+  expect(onlyTicks('Body.\n\n- [x] task a\n', synced)).toBeUndefined();
+  expect(onlyTicks('No tasks', 'No tasks')).toBeUndefined();
 });

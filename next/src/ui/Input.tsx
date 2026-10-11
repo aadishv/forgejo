@@ -84,10 +84,10 @@ export function TitleInput({invalid, ...rest}: Omit<InputHTMLAttributes<HTMLInpu
 }
 
 /** A heading that opens its editor on click (TitleInput): looks like the heading, hovers like a control. */
-export function EditableHeading({label, onEdit, children}: {label: string; onEdit: () => void; children: ReactNode}) {
+export function EditableHeading({label, onEdit, children, ref}: {label: string; onEdit: () => void; children: ReactNode; ref?: Ref<HTMLButtonElement>}) {
   return (
     <h2 className="text-xl font-semibold text-fg">
-      <button type="button" title={label} onClick={onEdit} className="interactive -mx-2 w-full cursor-text rounded-md px-2 py-0.5 text-left hover:bg-hover">{children}</button>
+      <button ref={ref} type="button" title={label} onClick={onEdit} className="interactive -mx-2 w-full cursor-text rounded-md px-2 py-0.5 text-left hover:bg-hover">{children}</button>
     </h2>
   );
 }

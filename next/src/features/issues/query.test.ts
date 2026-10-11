@@ -102,10 +102,11 @@ describe('runQuery', () => {
     expect(sorted('priority')).toEqual([1, 2, 4, 3]); // urgent, low, then none (newest first)
   });
 
-  test('groups: status (labels, then Forgejo state), priority, assignee, milestone', () => {
+  test('groups: status (labels; none: "No status" first, or Closed), priority, assignee, milestone', () => {
     const c = ctx(FACTS);
     const g = (group: Query['group']) => runQuery(ISSUES, q({state: 'all'}, {group}), c).rows.map((r) => (r.type === 'group' ? `[${r.label} ${String(r.count)}]` : r.id));
-    expect(g('status')).toEqual(['[Backlog 1]', 2, '[Open 1]', 4, '[In Progress 1]', 1, '[Done 1]', 3]);
+    // Open without a status: "No status", first.
+    expect(g('status')).toEqual(['[No status 1]', 4, '[Backlog 1]', 2, '[In Progress 1]', 1, '[Done 1]', 3]);
     expect(g('priority')).toEqual(['[Urgent 1]', 1, '[Low 1]', 2, '[No priority 2]', 4, 3]);
     expect(g('assignee')).toEqual(['[alice 1]', 2, '[dev 1]', 1, '[Unassigned 2]', 4, 3]);
     expect(g('milestone')).toEqual(['[Cycle 42 1]', 1, '[Later 1]', 4, '[No milestone 2]', 3, 2]);

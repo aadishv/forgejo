@@ -4,6 +4,7 @@
 import type {CSSProperties, ReactNode} from 'react';
 import {cx} from './cx.ts';
 import {Icon, type LucideIcon} from './Icon.tsx';
+import {Tooltip} from './Tooltip.tsx';
 
 const chip = 'inline-flex h-5 shrink-0 items-center gap-1 px-1.5 text-sm font-medium whitespace-nowrap tabular-nums';
 
@@ -54,13 +55,17 @@ export function LabelIcon({icon, color, size = 'md'}: {icon: LucideIcon; color: 
  * A chip that toggles (a reaction: its emoji and count). Pressed: the
  * viewer is among those counted (accent tint, aria-pressed).
  */
-export function ChipButton({pressed, label, onClick, disabled, children}: {pressed: boolean; label: string; onClick: () => void; disabled?: boolean | undefined; children: ReactNode}) {
-  return (
-    // aria-disabled, not disabled: who reacted stays reachable (focus, the title) when you cannot react.
-    <button type="button" aria-pressed={pressed} aria-label={label} title={label} aria-disabled={disabled} onClick={disabled ? undefined : onClick}
+/** A toggle chip (a reaction): `tooltip` says on hover what the chip is about (who reacted), as the app's tooltips do. */
+export function ChipButton({pressed, label, tooltip, onClick, disabled, children}: {
+  pressed: boolean; label: string; tooltip?: string | undefined; onClick: () => void; disabled?: boolean | undefined; children: ReactNode;
+}) {
+  const button = (
+    // aria-disabled, not disabled: who reacted stays reachable (focus, the tooltip) when you cannot react.
+    <button type="button" aria-pressed={pressed} aria-label={label} aria-disabled={disabled} onClick={disabled ? undefined : onClick}
       // The same border either way: toggling never changes its width.
       className={cx(chip, 'interactive rounded-full border', pressed ? 'border-transparent bg-accent-subtle text-accent-fg' : 'border-border-strong text-fg-muted', !disabled && 'hover:bg-hover')}>
       {children}
     </button>
   );
+  return <Tooltip content={tooltip ?? label}>{button}</Tooltip>;
 }

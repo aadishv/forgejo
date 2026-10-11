@@ -52,3 +52,9 @@ export const message = {
   description: 'text-sm text-fg-muted',
   actions: 'flex flex-wrap gap-2 pt-1',
 } as const;
+
+/**
+ * How far a popover, menu or tooltip keeps from the viewport's edges when it has to shift to fit (px; Radix's
+ * collisionPadding: a property popover at the right edge sat flush against it). --spacing × 2.
+ */
+export const EDGE_GAP = 8;

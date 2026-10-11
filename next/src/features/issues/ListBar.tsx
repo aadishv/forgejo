@@ -207,6 +207,13 @@ function SearchField({inputRef, value, onChange, onSettle}: {inputRef: RefObject
         if (e.key === 'Escape' && text) {
           e.stopPropagation();
           change('');
+        } else if (e.key === 'Escape') {
+          // Empty: the keys go back to the list (Linear; QA: J then typed "j" into the field).
+          e.preventDefault();
+          e.stopPropagation();
+          const list = document.querySelector<HTMLElement>('main [role="listbox"]');
+          if (list) list.focus({preventScroll: true});
+          else e.currentTarget.blur();
         } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
           // On to the results: the list takes the focus (its cursor on the first row); Enter opens that row.
           const list = document.querySelector<HTMLElement>('main [role="listbox"]');
@@ -350,7 +357,8 @@ const FilterMenu = observer(function FilterMenu({search, repoId, set}: {search: 
   // Read untracked: the menu does not re-render on every issue of the workspace (it is built again when it renders).
   else options.push(...untracked(() => workspaceFilters(pool, search, me, set)));
   return (
-    <CommandPopover label="Filter" placeholder="Filter by…"
+    // Opens at the top, on the filters in effect (QA: it opened scrolled to the assignee in effect, past them).
+    <CommandPopover label="Filter" placeholder="Filter by…" fromTop
       width="md" options={options} empty="Nothing to filter by is on this device."
       onOpenChange={(open) => {
         if (open && repoId !== undefined) loadPeople(app, repoId);

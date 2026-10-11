@@ -20,7 +20,7 @@
 import {useNavigate, useRouterState} from '@tanstack/react-router';
 import {focusList, rememberedRow, rememberRow} from '../../app/listReturn.ts';
 import {useVirtualizer} from '@tanstack/react-virtual';
-import {CircleDashed, FolderGit2, User as UserIcon} from 'lucide-react';
+import {FolderGit2, User as UserIcon} from 'lucide-react';
 import {autorun, runInAction, untracked} from 'mobx';
 import {observer} from 'mobx-react-lite';
 import {type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState} from 'react';
@@ -36,7 +36,7 @@ import {
 } from '../../ui/index.ts';
 import {type IssueAction, issueActions, openPicker} from './actions.ts';
 import {
-  AssigneesCell, DueCell, LabelsCell, PendingCell, PinCell, priorityIcon, PriorityCell, PullStateCell, statusIcon, StatusCell, TitleCell, UpdatedCell, UserAvatar,
+  AssigneesCell, DueCell, LabelsCell, PendingCell, PinCell, priorityIcon, PriorityCell, PullStateCell, StateGlyph, stateLook, statusIcon, StatusCell, TitleCell, UpdatedCell, UserAvatar,
   usePool,
 } from './cells.tsx';
 import {issuePath, issuesOf} from './edits.ts';
@@ -371,7 +371,8 @@ const GroupRow = observer(function GroupRow({row}: {row: Extract<Row, {type: 'gr
     const l = pool.model('Label').get(row.value);
     if (l) leading = <LabelIcon icon={row.kind === 'status' ? statusIcon(l.get('name')) : priorityIcon(l.get('name'))} color={l.get('color')}/>;
   } else if (row.kind === 'status') {
-    leading = <Icon icon={CircleDashed}/>;
+    // "No status" and "Closed": the state mark their rows show in the status cell.
+    leading = <StateGlyph look={stateLook(row.key === 'closed' ? 'closed' : 'open', false, false)}/>;
   } else if (row.kind === 'assignee') {
     leading = row.value ? <UserAvatar id={row.value}/> : <Icon icon={UserIcon}/>;
   } else if (row.kind === 'repo') {

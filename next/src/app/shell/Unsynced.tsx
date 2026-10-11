@@ -166,13 +166,13 @@ const FailedEntry = observer(function FailedEntry({app, draft}: {app: App; draft
       meta={w.meta}
       description={excerpt(draft.text) ? <>{excerpt(draft.text)}<br/>{draft.reason}</> : draft.reason}
       actions={<>
-        {draft.intent && <IconButton size="sm" icon={RotateCw} label="Retry" onClick={() => {
+        {draft.intent && <IconButton size="sm" icon={RotateCw} label={`Retry: ${draft.title}`} onClick={() => {
           intents.retry(draft.key);
         }}/>}
         {draft.text !== undefined && <IconButton size="sm" icon={Copy} label="Copy the text" onClick={() => {
           copy(app, draft.text ?? '');
         }}/>}
-        <IconButton size="sm" icon={Trash2} label="Discard" onClick={() => {
+        <IconButton size="sm" icon={Trash2} label={`Discard: ${draft.title}${w.meta ? `, ${w.meta}` : ''}`} onClick={() => {
           void intents.discardDraft(draft.key).then(() => {
             notify(app, {tone: 'neutral', title: 'Discarded', description: draft.title, action: {label: 'Undo', run: () => {
               void intents.restoreDraft(draft);
@@ -191,8 +191,11 @@ function excerpt(text: string | undefined): string | undefined {
   return t.length > 80 ? `“${t.slice(0, 79)}…”` : `“${t}”`;
 }
 
-function WaitingEntry({app, rec, offline}: {app: App; rec: IntentRecord; offline: boolean}) {
+const WaitingEntry = observer(function WaitingEntry({app, rec, offline}: {app: App; rec: IntentRecord; offline: boolean}) {
   const w = where(app, rec.intent, rec.issueNumber);
+  const title = describeIntent(rec.intent, names(app));
+  // Each Discard names its change (QA: every one was "Discard (not sent yet)" to a screen reader).
+  const which = `${title}${w.meta ? `, ${w.meta}` : ''}`;
   const reachable = app.session?.data.status.connection !== 'unreachable';
   const state = rec.state === 'acked' ? 'Saved; waiting for it to sync back.' :
     rec.note ?? (!offline ? 'Sending…' : reachable ? 'Sent when you are back online.' : 'Sent when Forgejo can be reached again.');
@@ -203,12 +206,12 @@ function WaitingEntry({app, rec, offline}: {app: App; rec: IntentRecord; offline
   return (
     <Entry
       leading={rec.attempts > 2 ? <Icon icon={TriangleAlert} className="text-warning"/> : <Icon icon={CircleDashed}/>}
-      title={describeIntent(rec.intent, names(app))}
+      title={title}
       meta={w.meta}
       description={text ? <>{text}<br/>{state}</> : state}
-      actions={discardable(rec) ? <IconButton size="sm" icon={Trash2} label={tried ? 'Stop sending (it may have reached Forgejo)' : 'Discard (not sent yet)'} onClick={() => {
+      actions={discardable(rec) ? <IconButton size="sm" icon={Trash2} label={tried ? `Stop sending: ${which} (it may have reached Forgejo)` : `Discard: ${which} (not sent yet)`} onClick={() => {
         discardWithUndo(app, rec);
       }}/> : undefined}
     />
   );
-}
+});

@@ -63,9 +63,10 @@ export const Reactions = observer(function Reactions({issueId, commentId}: {issu
         <ul aria-label="Reactions" className="flex flex-wrap gap-1">
           {groups.map((g) => {
             const names = [...(g.mine ? ['you'] : []), ...g.others.filter(Boolean)].join(', ');
+            const who = `${names.charAt(0).toUpperCase()}${names.slice(1)} reacted with ${NAMES[g.content] ?? g.content}`;
             return (
               <li key={g.content}>
-                <ChipButton pressed={g.mine} disabled={!canReact} label={`${names} reacted with ${NAMES[g.content] ?? g.content}${canReact ? (g.mine ? ' (remove yours)' : ' (add yours)') : ''}`} onClick={() => {
+                <ChipButton pressed={g.mine} disabled={!canReact} tooltip={who} label={`${names} reacted with ${NAMES[g.content] ?? g.content}${canReact ? (g.mine ? ' (remove yours)' : ' (add yours)') : ''}`} onClick={() => {
                   toggle(g.content, !g.mine);
                 }}>
                   <span aria-hidden>{EMOJI[g.content] ?? `:${g.content}:`}</span>

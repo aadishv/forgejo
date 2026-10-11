@@ -4,7 +4,7 @@
 import {Popover as P} from 'radix-ui';
 import type {ComponentProps} from 'react';
 import {cx} from './cx.ts';
-import {floating} from './recipes.ts';
+import {EDGE_GAP, floating} from './recipes.ts';
 
 export const Popover = P.Root;
 export const PopoverTrigger = P.Trigger;
@@ -19,7 +19,7 @@ export interface PopoverContentProps extends Omit<ComponentProps<typeof P.Conten
 export function PopoverContent({width = 'sm', sideOffset = 4, align = 'start', ...rest}: PopoverContentProps) {
   return (
     <P.Portal>
-      <P.Content sideOffset={sideOffset} align={align} className={cx(floating, 'z-popover max-h-popper overflow-y-auto p-2', widths[width])} {...rest}/>
+      <P.Content sideOffset={sideOffset} align={align} collisionPadding={EDGE_GAP} className={cx(floating, 'z-popover max-h-popper overflow-y-auto p-2', widths[width])} {...rest}/>
     </P.Portal>
   );
 }

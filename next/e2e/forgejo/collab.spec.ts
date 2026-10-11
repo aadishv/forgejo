@@ -132,7 +132,8 @@ test('a collaborator removed mid-session: the repository is purged from her devi
   await expect(page.getByRole('main').getByText(target.title)).toHaveCount(0, {timeout: 15_000});
   // Not on the server's issue (unsent, or refused), and the change waits in "Unsynced changes".
   expect((await apiJson<ApiIssue>('GET', `/repos/${USER}/${REPO}/issues/${String(target.number)}`)).labels.map((l) => l.name)).not.toContain('security');
-  await expect(indicator(page)).toContainText('1 pending', {timeout: 15_000});
+  // Refused, not pending: said apart ("1 not sent").
+  await expect(indicator(page)).toContainText('1 not sent', {timeout: 15_000});
   await indicator(page).click();
   const panel = page.getByRole('dialog', {name: 'Unsynced changes'});
   const notSent = panel.getByRole('region', {name: 'Not sent'});
@@ -141,7 +142,7 @@ test('a collaborator removed mid-session: the repository is purged from her devi
   else expect(sent.every((st) => st >= 400 && st < 500), JSON.stringify(sent)).toBe(true);
   console.log(`revocation order: ${sent.length ? `the flush came first, refused (${sent.join(', ')})` : 'the revocation came first, nothing sent'}`);
   // The draft can be discarded (nothing lost silently: it was the user's choice).
-  await notSent.getByRole('button', {name: 'Discard', exact: true}).first().click();
+  await notSent.getByRole('button', {name: /^Discard: /}).first().click();
   await expect(panel.getByText('Everything is synced')).toBeVisible({timeout: 10_000});
   expect(problems.filter((p) => !/Failed to fetch|ERR_INTERNET_DISCONNECTED|net::/.test(p))).toEqual([]);
   await ctx.close();

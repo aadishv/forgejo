@@ -10,11 +10,32 @@ import type {App} from './store.ts';
 
 /**
  * `board`: the new issue goes on that board, in that column (a board column's "New issue"). The repository: the
- * one given, else the one on screen, else the last one opened in this tab (the dialog then falls back to the one
- * last created in) — never just the first by name (QA verify3: issues were created in acme/atlas by accident).
+ * one given, else the one on screen, else the last one opened (in this tab, else on this device; the dialog then
+ * falls back to the one last created in) — never just the first by name (QA verify3: issues were created in
+ * acme/atlas by accident).
  */
 export function openCreate(app: App, repoId = 0, board?: {projectId: number; columnId: number}): void {
+  const userId = app.session?.userId ?? 0;
   runInAction(() => {
-    app.ui.create = {repoId: repoId || app.ui.repoOpen || app.ui.recentRepo || 0, ...(board ? {board} : {})};
+    app.ui.create = {repoId: repoId || app.ui.repoOpen || app.ui.recentRepo || lastOpened(userId), ...(board ? {board} : {})};
   });
+}
+
+/** The repository last opened, per user on this device: a new tab's C starts there too (QA: it began at acme/atlas). */
+const openedKey = (userId: number) => `forgejo-next:opened-repo:${String(userId)}`;
+
+export function rememberOpened(userId: number, repoId: number): void {
+  try {
+    localStorage.setItem(openedKey(userId), String(repoId));
+  } catch {
+    // Storage blocked: this tab still knows (app.ui.recentRepo).
+  }
+}
+
+function lastOpened(userId: number): number {
+  try {
+    return Number(localStorage.getItem(openedKey(userId))) || 0;
+  } catch {
+    return 0;
+  }
 }

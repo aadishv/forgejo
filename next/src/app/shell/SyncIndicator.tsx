@@ -44,19 +44,24 @@ export const SyncIndicator = observer(function SyncIndicator() {
   const {data, auth} = useSession();
   const v = describe(data.status.connection, data.status.loading, auth.status.state, data.workspace.current !== undefined);
   const pending = app.ui.pendingIntents;
+  // Refused changes are not "pending" next to a green Live (QA): they are said apart, in the warning tone.
+  const failed = app.ui.failedIntents;
   // Opens the "Unsynced changes" panel (its own chunk). Always the same button: focus stays when the count changes.
   const open = () => {
     runInAction(() => {
       app.ui.unsyncedOpen = true;
     });
   };
-  const words = pending > 0 ? `${v.label} · ${String(pending)} pending` : v.label;
+  const parts = [pending > 0 && `${String(pending)} pending`, failed > 0 && `${String(failed)} not sent`].filter(Boolean);
+  const words = [v.label, ...parts].join(' · ');
+  const tip = [v.detail, pending > 0 && `${String(pending)} not synced yet.`, failed > 0 && `${String(failed)} refused by Forgejo: retry or discard.`].filter(Boolean).join(' ');
   return (
     <div className="flex items-center gap-2">
-      <Tooltip content={pending ? `${v.detail} ${String(pending)} not synced yet: see them.` : v.detail}>
-        <Status tone={v.tone} onClick={open} label={`${words}: show unsynced changes`}>
+      <Tooltip content={tip}>
+        <Status tone={failed > 0 && v.tone === 'success' ? 'warning' : v.tone} onClick={open} label={`${words}: show unsynced changes`}>
           {v.label}
           {pending > 0 && <span className="tabular-nums">· {pending} pending</span>}
+          {failed > 0 && <span className="tabular-nums">· {failed} not sent</span>}
         </Status>
       </Tooltip>
       {/* The live region: announces the connection, apart from the button (not every pending change). */}

@@ -42,6 +42,10 @@ export function LoggedOut({boot, onSignIn, message, appName, classic}: LoggedOut
       onSignIn?.();
     }
   }, [boot, onSignIn]);
+  // The tab says what this is and where, as every page's does (QA: "Forgejo" at every address).
+  useEffect(() => {
+    if (!boot && appName) document.title = `Sign in · ${appName}`;
+  }, [boot, appName]);
   return (
     <CenteredScreen boot={boot}>
       <EmptyState

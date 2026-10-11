@@ -30,10 +30,18 @@ import {reach} from '../../app/online.ts';
 import {canWrite} from '../../app/access.ts';
 import {MarkdownField} from '../editor/Composer.tsx';
 import {useUser} from '../issues/cells.tsx';
-import {Markdown, toggleTask} from './Markdown.tsx';
+import {Markdown, onlyTicks, toggleTask} from './Markdown.tsx';
 
-/** Markdown as it shows: the server's rendering, or the typed source while an edit is not synced. */
-export function Rendered({text, html, local, onTask}: {text: string; html: string; local: boolean; onTask?: ((index: number, checked: boolean) => void) | undefined}) {
+/**
+ * Markdown as it shows: the server's rendering, or the typed source while an edit is not synced — except an edit of
+ * task ticks only, which shows on the server's rendering (its boxes stay tickable offline).
+ */
+export function Rendered({text, html, local, synced, onTask}: {
+  text: string; html: string; local: boolean; synced?: {text: string; html: string} | undefined;
+  onTask?: ((index: number, checked: boolean) => void) | undefined;
+}) {
+  const ticks = local && synced?.html ? onlyTicks(text, synced.text) : undefined;
+  if (ticks && synced) return <Markdown html={synced.html} onTask={onTask} ticks={ticks}/>;
   if (local) return <ProseSource text={text}/>;
   return html ? <Markdown html={html} onTask={onTask}/> : <p className="text-base text-fg-subtle">No text.</p>;
 }
@@ -393,8 +401,8 @@ function CommentEditor({c, issueId, repoId, onDone, onReopen}: {c: Entity<'Comme
   );
 }
 
-/** The new-comment box at the end of the timeline. */
-export function CommentComposer({issueId, repoId}: {issueId: number; repoId: number}) {
+/** The new-comment box at the end of the timeline (an observer: it names who is commenting, from the pool). */
+export const CommentComposer = observer(function CommentComposer({issueId, repoId}: {issueId: number; repoId: number}) {
   const app = useApp();
   const me = useUser(useSession().userId);
   const who = useId();
@@ -411,7 +419,7 @@ export function CommentComposer({issueId, repoId}: {issueId: number; repoId: num
         }}/>
     </div>
   );
-}
+});
 
 /** Changes of yours that overrode someone's newer value (last writer wins), with one-click undo. */
 export const Overrides = observer(function Overrides({issueId}: {issueId: number}) {
@@ -451,9 +459,17 @@ export const TitleSection = observer(function TitleSection({issue}: {issue: Enti
   const [text, setText] = useState<string | undefined>(undefined);
   const title = issueTitle(overlay, issue);
   const mayEdit = issue.get('poster_id') === session.userId || canWrite(session, issue.get('repo_id'));
+  // Saved with Enter or cancelled with Esc: the focus back on the title (QA: it fell to <body>), not on a blur.
+  const heading = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (text !== undefined || !refocus.current) return;
+    refocus.current = false;
+    heading.current?.focus({preventScroll: true});
+  }, [text]);
   if (text === undefined) {
     if (!mayEdit) return <h2 className="text-xl font-semibold text-fg">{title}</h2>;
-    return <EditableHeading label="Rename" onEdit={() => {
+    return <EditableHeading ref={heading} label="Rename" onEdit={() => {
       setText(title);
     }}>{title}</EditableHeading>;
   }
@@ -472,10 +488,12 @@ export const TitleSection = observer(function TitleSection({issue}: {issue: Enti
     }} onKeyDown={(e) => {
       if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
         e.preventDefault();
+        refocus.current = true;
         save();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        refocus.current = true;
         setText(undefined);
       }
     }}/>

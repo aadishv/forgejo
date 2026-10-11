@@ -89,6 +89,9 @@ export class ViewStore {
     const view = parseView({id: uuid(), name, path, search});
     if (!view) return undefined;
     this.write([...read(this.userId), view].slice(-MAX));
+    // The list on screen is now this view: changing it says "changed" and offers Update (QA: the chip went away at
+    // the first change after saving, as only opening a view set this).
+    this.open(view.id);
     return view;
   }
 

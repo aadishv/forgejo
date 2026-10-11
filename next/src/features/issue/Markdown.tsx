@@ -14,12 +14,17 @@ import {nextPathOf} from '../../app/paths.ts';
 import {type App, useApp} from '../../app/store.ts';
 import {setMarkup} from '../../app/trusted.ts';
 import {paintTokens, Prose} from '../../ui/index.ts';
+import {whenIdle} from '../../app/lazy.tsx';
 
 /**
  * `onTask`: the task-list checkboxes can be ticked (the viewer may edit the text): called with the task's index
  * in the text and its new state (the caller edits the markdown). Without it they stay inert.
  */
-export function Markdown({html, onTask}: {html: string; onTask?: ((index: number, checked: boolean) => void) | undefined}) {
+export function Markdown({html, onTask, ticks}: {
+  html: string; onTask?: ((index: number, checked: boolean) => void) | undefined;
+  /** The task boxes as ticked here (an edit of the ticks not synced yet), in order, over the rendering's. */
+  ticks?: readonly boolean[] | undefined;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const app = useApp();
@@ -29,14 +34,16 @@ export function Markdown({html, onTask}: {html: string; onTask?: ((index: number
     setMarkup(ref.current, html);
     appLinks(ref.current, app.config.app_sub_url);
     highlightBlocks(app, ref.current);
-    if (tasks) {
+    if (tasks || ticks) {
       ref.current.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((box, i) => {
+        if (ticks?.[i] !== undefined) box.checked = ticks[i];
+        if (!tasks) return;
         box.disabled = false;
         box.dataset.task = String(i);
         box.setAttribute('aria-label', `Task ${String(i + 1)}`);
       });
     }
-  }, [app, html, tasks]);
+  }, [app, html, tasks, ticks]);
   // A native listener: the checkboxes are not React's elements, and React's onChange for a checkbox is made from
   // the click on an element it renders, so on the container it never fired (QA round 2: ticks were never saved).
   const tick = useEffectEvent((i: number, checked: boolean) => {
@@ -98,14 +105,11 @@ export function appLinks(root: HTMLElement, sub: string): void {
   }
 }
 
-/**
- * Ticks or unticks the `index`-th task ("- [ ] …", "1. [x] …") of markdown, outside fenced code (the order
- * Forgejo renders the checkboxes in). The text unchanged when there is no such task.
- */
-export function toggleTask(text: string, index: number, checked: boolean): string {
+/** The task-list items of markdown outside fenced code (Forgejo renders a checkbox for each, in this order). */
+function tasksOf(text: string): {line: number; at: number; checked: boolean}[] {
   const lines = text.split('\n');
+  const out: {line: number; at: number; checked: boolean}[] = [];
   let fence: string | undefined;
-  let n = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
     const f = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
@@ -115,13 +119,42 @@ export function toggleTask(text: string, index: number, checked: boolean): strin
     }
     if (fence) continue;
     const m = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/.exec(line);
-    if (!m) continue;
-    if (n++ === index) {
-      lines[i] = `${m[1] ?? ''}${checked ? 'x' : ' '}${m[3] ?? ''}${line.slice(m[0].length)}`;
-      return lines.join('\n');
-    }
+    if (m) out.push({line: i, at: (m[1] ?? '').length, checked: m[2] !== ' '});
   }
-  return text;
+  return out;
+}
+
+/**
+ * The ticks of `text` when it differs from `synced` only by which tasks are ticked (an offline tick): Forgejo's
+ * rendering of `synced` then shows it, its boxes set from these (QA: ticking offline showed the description as raw
+ * markdown, with no box left to tick). undefined otherwise.
+ */
+export function onlyTicks(text: string, synced: string): boolean[] | undefined {
+  const mine = tasksOf(text);
+  const theirs = tasksOf(synced);
+  if (mine.length !== theirs.length || !mine.length) return undefined;
+  const blank = (t: string, tasks: {line: number; at: number}[]) => {
+    const lines = t.split('\n');
+    for (const k of tasks) {
+      const l = lines[k.line] ?? '';
+      lines[k.line] = `${l.slice(0, k.at)} ${l.slice(k.at + 1)}`;
+    }
+    return lines.join('\n');
+  };
+  return blank(text, mine) === blank(synced, theirs) ? mine.map((k) => k.checked) : undefined;
+}
+
+/**
+ * Ticks or unticks the `index`-th task ("- [ ] …", "1. [x] …") of markdown, outside fenced code (the order
+ * Forgejo renders the checkboxes in). The text unchanged when there is no such task.
+ */
+export function toggleTask(text: string, index: number, checked: boolean): string {
+  const t = tasksOf(text)[index];
+  if (!t) return text;
+  const lines = text.split('\n');
+  const l = lines[t.line] ?? '';
+  lines[t.line] = `${l.slice(0, t.at)}${checked ? 'x' : ' '}${l.slice(t.at + 1)}`;
+  return lines.join('\n');
 }
 
 /**
@@ -139,8 +172,12 @@ function highlightBlocks(app: App, root: HTMLElement): void {
       const text = code.textContent;
       if (!lang || !text) continue;
       void src.snippet(lang, text).then((hl) => {
-        // Still the same block (the markup is replaced on every change of the HTML).
-        if (hl && code.isConnected && code.textContent === text) paintTokens(code, hl);
+        // One block per idle period: a README's blocks all came back together and were painted in one task, which
+        // was most of a repository page's longest task on a slow CPU (QA: 25 ms of 112 at 4×).
+        whenIdle(() => {
+          // Still the same block (the markup is replaced on every change of the HTML).
+          if (hl && code.isConnected && code.textContent === text) paintTokens(code, hl);
+        });
       });
     }
   }).catch(() => undefined);

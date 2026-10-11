@@ -37,19 +37,23 @@ import {canWrite} from '../../app/access.ts';
 
 /** The dialog's draft in a repository. */
 const draftKey = (repoId: number) => `text:new-issue:${String(repoId)}`;
-const LAST_REPO = 'forgejo-next:create';
+/**
+ * The repository last created in, per user on this device (localStorage: a new tab starts from it too — QA: in a
+ * second tab, C defaulted to the first repository by name, as sessionStorage starts empty in each tab).
+ */
+const lastRepoKey = (userId: number) => `forgejo-next:create:${String(userId)}`;
 
-function rememberRepo(repoId: number): void {
+function rememberRepo(userId: number, repoId: number): void {
   try {
-    sessionStorage.setItem(LAST_REPO, String(repoId));
+    localStorage.setItem(lastRepoKey(userId), String(repoId));
   } catch {
     // Storage blocked.
   }
 }
 
-function lastRepo(): number {
+function lastRepo(userId: number): number {
   try {
-    return Number(sessionStorage.getItem(LAST_REPO)) || 0;
+    return Number(localStorage.getItem(lastRepoKey(userId))) || 0;
   } catch {
     return 0;
   }
@@ -92,7 +96,7 @@ class Form {
     this.board = board;
     const repos = repoChoices(app, board);
     // The page's repository (or the one last opened, or last created in); its own draft, if any.
-    this.repoId = [initialRepo, lastRepo()].find((id) => id > 0 && repos.some((r) => r.id === id)) ?? repos[0]?.id ?? 0;
+    this.repoId = [initialRepo, lastRepo(app.session?.userId ?? 0)].find((id) => id > 0 && repos.some((r) => r.id === id)) ?? repos[0]?.id ?? 0;
     const text = untracked(() => editing(app).intents.drafts.get(draftKey(this.repoId)))?.text ?? '';
     this.title = text.split('\n')[0] ?? '';
     this.body = text.split('\n').slice(2).join('\n');
@@ -202,7 +206,7 @@ class Form {
     if (this.board) {
       intents.submit({kind: 'issue.project', issueId: tempNum(tempId), repoId: this.repoId, projectId: this.board.projectId, columnId: this.board.columnId, base: 0});
     }
-    rememberRepo(this.repoId);
+    rememberRepo(this.app.session?.userId ?? 0, this.repoId);
     return tempIssuePath(repo.owner_name, repo.name, tempId);
   }
 }

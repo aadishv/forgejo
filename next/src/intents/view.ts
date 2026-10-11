@@ -56,10 +56,11 @@ export function issueLocked(overlay: Overlay, issue: Entity<'Issue'>): boolean {
  * pending (the server's rendered HTML is not of that text), else the server's.
  * undefined while the issue's lazy group is not here.
  */
-export function issueBody(pool: Pool, overlay: Overlay, issueId: number): {text: string; html: string; local: boolean} | undefined {
+export function issueBody(pool: Pool, overlay: Overlay, issueId: number): {text: string; html: string; local: boolean; synced?: {text: string; html: string}} | undefined {
   const o = overlay.field('IssueBody', issueId, 'body');
   const body = pool.model('IssueBody').get(issueId) ?? overlay.createdEntity('IssueBody', issueId) as Entity<'IssueBody'> | undefined;
-  if (o) return {text: o.value as string, html: '', local: true};
+  // An edit not synced yet: its text, and what Forgejo has (its rendering can show the edit when only ticks differ).
+  if (o) return {text: o.value as string, html: '', local: true, ...body && body.version > 0 ? {synced: {text: body.get('body'), html: body.get('body_html')}} : {}};
   if (!body) return undefined;
   return {text: body.get('body'), html: body.get('body_html'), local: body.version === 0};
 }

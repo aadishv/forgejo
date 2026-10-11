@@ -38,7 +38,20 @@ export function toggleSidebar(): void {
     return;
   }
   const hidden = !readSplash().sidebarHidden;
+  // Toggled with one of its buttons (the sidebar's Hide, the header's Show): the focus goes to the one that replaces
+  // it, not to <body> as the clicked one disappears (QA).
+  const byButton = document.activeElement instanceof Element && document.activeElement.closest('[data-sidebar-toggle]') !== null;
   writeSplash({sidebarHidden: hidden});
   if (hidden) html.dataset.sidebar = 'hidden';
   else delete html.dataset.sidebar;
+  if (byButton) {
+    requestAnimationFrame(() => {
+      for (const b of document.querySelectorAll<HTMLElement>('[data-sidebar-toggle]')) {
+        if (b.checkVisibility()) {
+          b.focus({preventScroll: true});
+          return;
+        }
+      }
+    });
+  }
 }

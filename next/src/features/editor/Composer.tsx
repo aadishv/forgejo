@@ -118,13 +118,24 @@ function useSuggestions(repoId: number): (trigger: '@' | '#', query: string) => 
     const s = app.session;
     if (!s || repoId <= 0) return [];
     const q = query.toLowerCase();
+    // What the query names exactly first, then what starts with it, then what merely contains it: Enter takes the
+    // first row ("#10" is #10, not #11 "A10: …").
     if (trigger === '@') {
+      const rank = (p: {login: string; name: string}) => {
+        const login = p.login.toLowerCase();
+        return login === q ? 0 : login.startsWith(q) ? 1 : p.name.toLowerCase().startsWith(q) ? 2 : 3;
+      };
       return repoPeople(s.data.pool, repoId, s.userId).filter((p) => p.login.toLowerCase().startsWith(q) || p.name.toLowerCase().includes(q))
-        .slice(0, SUGGESTIONS).map((p) => ({label: p.login, detail: p.name === p.login ? undefined : p.name}));
+        .map((p, k) => ({p, k, r: rank(p)})).sort((a, b) => a.r - b.r || a.k - b.k)
+        .slice(0, SUGGESTIONS).map(({p}) => ({label: p.login, detail: p.name === p.login ? undefined : p.name}));
     }
+    const rank = (i: {number: number; title: string}) => {
+      const n = String(i.number);
+      return !q ? 0 : n === q ? 0 : n.startsWith(q) ? 1 : 2;
+    };
     return [...s.data.pool.model('Issue').by('repo_id', repoId)].map((e) => e.data)
       .filter((i) => !q || String(i.number).startsWith(q) || i.title.toLowerCase().includes(q))
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, SUGGESTIONS)
+      .sort((a, b) => rank(a) - rank(b) || b.updated_at.localeCompare(a.updated_at)).slice(0, SUGGESTIONS)
       .map((i) => ({label: String(i.number), detail: i.title}));
   });
 }

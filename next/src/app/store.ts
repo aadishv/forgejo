@@ -26,8 +26,10 @@ export interface UiState {
   shortcutsOpen: boolean;
   /** The sign-out warning (unsynced intents), with their count. */
   signOut: {pending: number} | undefined;
-  /** Changes not synced yet: queued intents and failed ones kept as drafts (the sync indicator's "N pending"). */
+  /** Changes not synced yet: queued intents (the sync indicator's "N pending"). */
   pendingIntents: number;
+  /** Changes Forgejo refused (kept as drafts in the Unsynced panel): not "pending", they wait for the user. */
+  failedIntents: number;
   /** Unread notifications as the user sees them (pending read/unread intents included); undefined until the queue started. */
   unread: number | undefined;
   /** The new-issue dialog (C): open, for which repository (0: the last one used), for which board column. */
@@ -61,7 +63,7 @@ export interface App {
 
 export function createApp(config: NextConfig, session: Session | undefined): App {
   const ui = observable<UiState>(
-    {paletteOpen: false, paletteQuery: '', shortcutsOpen: false, signOut: undefined, pendingIntents: 0, unread: undefined, create: undefined, unsyncedOpen: false, issueOpen: undefined, repoOpen: 0, recentRepo: 0, notices: [], issueTarget: [], picker: undefined, previousPath: undefined},
+    {paletteOpen: false, paletteQuery: '', shortcutsOpen: false, signOut: undefined, pendingIntents: 0, failedIntents: 0, unread: undefined, create: undefined, unsyncedOpen: false, issueOpen: undefined, repoOpen: 0, recentRepo: 0, notices: [], issueTarget: [], picker: undefined, previousPath: undefined},
     {notices: observableShallow, issueTarget: observableRef, picker: observableRef, create: observableRef},
   );
   return {config, session, ui};

@@ -67,7 +67,7 @@ export function PageHeader({title, icon, context, children, docTitle}: PageHeade
   return (
     <HeaderBar>
       <DocumentTitle text={docTitle ?? (typeof title === 'string' ? title : undefined)}/>
-      <WhenSidebarAway><IconButton size="sm" icon={PanelLeft} label="Show the sidebar" shortcut={shortcutHint('sidebar.toggle')} onClick={toggleSidebar}/></WhenSidebarAway>
+      <WhenSidebarAway><IconButton size="sm" icon={PanelLeft} label="Show the sidebar" shortcut={shortcutHint('sidebar.toggle')} onClick={toggleSidebar} data-sidebar-toggle=""/></WhenSidebarAway>
       {icon && <span className="flex max-md:hidden"><Icon icon={icon} className="text-fg-subtle"/></span>}
       {context && (
         <nav aria-label="Breadcrumb" className="flex min-w-0 shrink-2 items-center gap-1 text-base text-fg-muted max-md:order-first max-md:w-full max-md:pt-2 max-md:text-sm">

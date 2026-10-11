@@ -78,7 +78,9 @@ function suggestions(complete: (trigger: '@' | '#', query: string) => Suggestion
     const from = m.from + at + 1;
     const query = ctx.state.sliceDoc(from, ctx.pos);
     const options = complete(trigger, query).map((o) => ({label: o.label, ...(o.detail ? {detail: o.detail} : {}), type: trigger === '@' ? 'user' : 'issue'}));
-    return options.length ? {from, options, validFor: /^[\w.-]*$/, filter: false} : null;
+    // No validFor: the caller narrows (filter off), so every keystroke asks again. With validFor, CodeMirror kept the
+    // first answer (an empty query's: everyone) while typing on, and Enter took its first row (QA: "#10" became "#2").
+    return options.length ? {from, options, filter: false} : null;
   };
 }
 

@@ -9,7 +9,7 @@
 // S/L/A/M/P edit it (the pickers); its own chunk.
 
 import {Link, useMatch, useNavigate, useParams, useRouter, useRouterState, useSearch} from '@tanstack/react-router';
-import {CircleDot, Lock, SearchX} from 'lucide-react';
+import {CircleDot, GitPullRequest, Lock, SearchX} from 'lucide-react';
 import {canWrite} from '../../app/access.ts';
 import {issueLocked, issueTitle} from '../../intents/view.ts';
 import {runInAction, untracked} from 'mobx';
@@ -28,7 +28,7 @@ import type {Pool} from '../../data/pool.ts';
 import {tempNum} from '../../intents/intents.ts';
 import {TEMP_PATH} from './paths.ts';
 import {editing} from '../../intents/session.ts';
-import {Button, Icon, Skeleton, SkeletonText, TabLink, TabNav} from '../../ui/index.ts';
+import {Icon, Skeleton, SkeletonText, TabLink, TabNav, TextLink} from '../../ui/index.ts';
 import {openPicker} from '../issues/actions.ts';
 import {AssigneesCell, LabelsCell, PendingCell, PriorityCell, StateIcon, StatusCell, TitleCell, usePool, UserName} from '../issues/cells.tsx';
 import {closedPager} from '../issues/closed.ts';
@@ -238,12 +238,15 @@ const PROPERTIES = 'issue-properties';
 const PropertiesSummary = observer(function PropertiesSummary({issue}: {issue: Entity<'Issue'>}) {
   return (
     <div className="flex flex-wrap items-center gap-2 @xl:hidden">
-      <StatusCell issue={issue}/><PriorityCell issue={issue}/><LabelsCell issue={issue}/><AssigneesCell issue={issue}/>
-      <Button size="sm" variant="ghost" onClick={() => {
+      {/* No empty priority slot here: it left a gap before "All properties" (a list keeps it to align titles). */}
+      <StatusCell issue={issue}/><PriorityCell issue={issue} slot={false}/><LabelsCell issue={issue}/><AssigneesCell issue={issue}/>
+      {/* A link-looking button (no padding of its own): it follows the gist without a gap (QA: a ghost button's
+          padding left a wide hole after the status when there was nothing else to show). */}
+      <TextLink><button type="button" onClick={() => {
         const pane = document.getElementById(PROPERTIES);
         pane?.scrollIntoView({block: 'start'});
         pane?.focus({preventScroll: true});
-      }}>All properties</Button>
+      }}>All properties</button></TextLink>
     </div>
   );
 });
@@ -270,9 +273,11 @@ const NotHere = observer(function NotHere({owner, repo, repoId, index}: {owner: 
   // Offline nothing more can arrive: say so at once (no placeholder that never resolves).
   const offline = reach(data.status.connection) !== 'online';
   const searching = !offline && (!pager.done || data.status.loading > 0);
+  // Asked for as a pull request (/pulls/N): it is named one (QA: "Issues › #99999", "This issue does not exist").
+  const pull = useRouterState({select: (s) => /\/pulls\/[^/]+\/?$/.test(s.location.pathname)});
   return (
     <>
-      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={CircleDot} title={indexLabel(index)} detail="issues"/>
+      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={pull ? GitPullRequest : CircleDot} title={indexLabel(index)} detail={pull ? 'pulls' : 'issues'}/>
       <PageBody>
         {searching ?
           <div className="flex flex-col gap-3 px-8 py-6" aria-busy><Skeleton className="h-5 w-96"/><SkeletonText lines={2}/></div> :
@@ -280,7 +285,7 @@ const NotHere = observer(function NotHere({owner, repo, repoId, index}: {owner: 
           // its classic page would say the same (no classic link to a 404).
           // A temporary address (an issue created offline) on a device that did not create it: its number is not
           // known here.
-          <Missing what="This issue" icon={SearchX} description={index < 0 ?
+          <Missing what={pull ? 'This pull request' : 'This issue'} icon={SearchX} description={index < 0 ?
             'This address belongs to an issue created offline on another device. Find it in the repository’s issues.' :
             undefined}/>}
       </PageBody>

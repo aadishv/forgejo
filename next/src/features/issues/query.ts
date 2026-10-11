@@ -294,7 +294,8 @@ export function kindLabel(issue: Issue, kind: ScopeKind, ctx: Pick<QueryContext,
 }
 
 // Groups that stand for nothing (shared by every run).
-const OPEN: GroupKey = {key: 'open', label: 'Open', rank: 1.5, name: '', value: 0};
+/** Open without a status label: one group of its own, first (QA: an "Open" group sat between "todo" and "in progress"). */
+const NO_STATUS: GroupKey = {key: 'none', label: 'No status', rank: -1, name: '', value: 0};
 const CLOSED: GroupKey = {key: 'closed', label: 'Closed', rank: 4.5, name: '', value: 0};
 const NO_PRIORITY: GroupKey = {key: 'none', label: 'No priority', rank: 9, name: '', value: 0};
 const UNASSIGNED: GroupKey = {key: 'none', label: 'Unassigned', rank: 1, name: '', value: 0};
@@ -309,8 +310,8 @@ function groupOf(issue: Issue, group: Group, state: string, run: Run): GroupKey 
     case 'status': {
       const k = runKindLabel(issue, 'status', run);
       if (k) return interned(run, k.label.id, () => labelGroup(k));
-      // No status label: Forgejo's own state places it (before "in progress", or with "done").
-      return state === 'closed' ? CLOSED : OPEN;
+      // No status label: "No status" (first), or with the closed ones when Forgejo's state is closed.
+      return state === 'closed' ? CLOSED : NO_STATUS;
     }
     case 'priority': {
       const k = runKindLabel(issue, 'priority', run);

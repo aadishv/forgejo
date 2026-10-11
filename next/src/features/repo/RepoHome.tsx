@@ -9,12 +9,14 @@
 import {Link} from '@tanstack/react-router';
 import {BookMarked, CircleDot, Copy, Folder, FolderGit2, GitBranch, GitPullRequest, Globe, Package, SquarePen, Star, GitFork} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
-import {Fragment, type ReactNode, useEffect, useMemo} from 'react';
+import {Fragment, type ReactNode, useEffect, useMemo, useState} from 'react';
 import {whenIdle} from '../../app/lazy.tsx';
 import {sitePath} from '../../app/config.ts';
 import {openCreate} from '../../app/create.ts';
 import {hrefOf, useLinkClick} from '../../app/links.ts';
 import {notify} from '../../app/notices.ts';
+import {online} from '../../app/api.ts';
+import {connectivity} from '../../app/online.ts';
 import {codePath} from '../../app/paths.ts';
 import {PageBody, PageColumn} from '../../app/shell/Frame.tsx';
 import {shortcutHint} from '../../app/shortcuts/index.ts';
@@ -81,6 +83,8 @@ const Summary = observer(function Summary({repoId}: {repoId: number}) {
         {r.name}
         {flags.map((f) => <Badge key={f} tone={f === 'Archived' ? 'warning' : 'neutral'}>{f}</Badge>)}
       </h2>
+      {/* A fork names what it was forked from, under its name (QA: only a "Fork" badge said it was one). */}
+      {r.fork && r.parent_id > 0 && <ForkLine parentId={r.parent_id}/>}
       {r.description ? <p className="max-w-lg text-md text-fg-muted">{r.description}</p> : <p className="text-md text-fg-subtle">No description.</p>}
       {r.topics.length > 0 && <div className="flex flex-wrap gap-1">{r.topics.map((t) => <Badge key={t} tone="accent">{t}</Badge>)}</div>}
     </div>
@@ -223,7 +227,6 @@ const About = observer(function About({owner, repo, repoId}: {owner: string; rep
       <Property label="Updated">
         <PropertyValue tone="muted"><time dateTime={r.updated_at} title={fullDate(r.updated_at)}>{ago(r.updated_at)}</time></PropertyValue>
       </Property>
-      {r.fork && r.parent_id > 0 && <ForkOf parentId={r.parent_id}/>}
       {!r.empty && <Property label="Archive">
         <PropertyValue tone="muted"><TextLink><a href={sitePath(app.config, `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/archive/${encodeURIComponent(r.default_branch)}.zip`)} download>{r.default_branch}.zip</a></TextLink></PropertyValue>
       </Property>}
@@ -231,12 +234,36 @@ const About = observer(function About({owner, repo, repoId}: {owner: string; rep
   );
 });
 
-const ForkOf = observer(function ForkOf({parentId}: {parentId: number}) {
+/** A fork's parent: from the pool, else asked of Forgejo once (a repository outside the workspace). */
+function useParent(parentId: number): {owner: string; name: string; full: string} | undefined {
+  const app = useApp();
   const p = usePool().model('Repository').get(parentId)?.data;
+  const [asked, setAsked] = useState<{owner: string; name: string; full: string} | undefined>(() => parentCache.get(parentId));
+  useEffect(() => {
+    if (p || asked || !connectivity.online) return undefined;
+    let live = true;
+    online<{name?: string; full_name?: string; owner?: {login?: string}}>(app, {path: `/repositories/${String(parentId)}`, api: 'v1'}).then((r) => {
+      if (!r?.name || !r.owner?.login) return;
+      const v = {owner: r.owner.login, name: r.name, full: r.full_name ?? `${r.owner.login}/${r.name}`};
+      parentCache.set(parentId, v);
+      if (live) setAsked(v);
+    }, () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [app, p, asked, parentId]);
+  return p ? {owner: p.owner_name, name: p.name, full: p.full_name} : asked;
+}
+
+const parentCache = new Map<number, {owner: string; name: string; full: string}>();
+
+const ForkLine = observer(function ForkLine({parentId}: {parentId: number}) {
+  const p = useParent(parentId);
   if (!p) return null;
   return (
-    <Property label="Forked from">
-      <PropertyValue><TextLink><Link to="/$owner/$repo" params={{owner: p.owner_name, repo: p.name}} activeOptions={{exact: true}}>{p.full_name}</Link></TextLink></PropertyValue>
-    </Property>
+    <p className="flex items-center gap-1.5 text-sm text-fg-muted">
+      <Icon icon={GitFork} size="sm"/>Forked from <TextLink><Link to="/$owner/$repo" params={{owner: p.owner, repo: p.name}} activeOptions={{exact: true}}>{p.full}</Link></TextLink>
+    </p>
   );
 });
+

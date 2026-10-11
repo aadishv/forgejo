@@ -102,11 +102,13 @@ export function editing(app: App): Editing {
   });
   e = {overlay, intents};
   sessions.set(s, e);
-  // The sync indicator's "N pending" and the sign-out warning.
+  // The sync indicator's "N pending" (still to be sent) and "N not sent" (refused: the user decides).
   autorun(() => {
-    const n = intents.pending + intents.failedCount;
+    const pending = intents.pending;
+    const failed = intents.failedCount;
     runInAction(() => {
-      app.ui.pendingIntents = n;
+      app.ui.pendingIntents = pending;
+      app.ui.failedIntents = failed;
     });
   });
   // The inbox's unread count as the user sees it (the sidebar is on the boot route and does not load the overlay).

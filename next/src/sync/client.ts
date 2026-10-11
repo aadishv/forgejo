@@ -1165,14 +1165,17 @@ export class SyncClient {
     if (this.stopped) return;
     for (const c of changes) {
       if (c.model !== 'Issue' || c.entity || !c.dropped) continue;
-      const g = `issue:${c.id}`;
-      if (!this.groups.get(g) && !this.ephemeral.has(g)) continue;
       if (this.pool.model('Issue').get(c.id)) continue; // moved, not gone
-      this.ephemeral.delete(g);
-      this.groups.update(g, (x) => {
-        x.holders = [];
-      });
-      this.recompute();
+      const g = `issue:${c.id}`;
+      if (this.groups.get(g) || this.ephemeral.has(g)) {
+        this.ephemeral.delete(g);
+        this.groups.update(g, (x) => {
+          x.holders = [];
+        });
+        this.recompute();
+      }
+      // Also when its page is not open: changes queued for it can never be sent (QA: a comment made offline on an
+      // issue deleted meanwhile waited "for the issue to be on this device" for good).
       this.emit('issueDropped', {issueId: c.id});
     }
   }

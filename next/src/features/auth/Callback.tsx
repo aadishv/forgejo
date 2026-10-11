@@ -40,7 +40,7 @@ export default function Callback() {
     });
   }, [app]);
   if (error) {
-    return <LoggedOut message={error} onSignIn={app.config.oauth ? () => {
+    return <LoggedOut appName={app.config.app_name} message={error} onSignIn={app.config.oauth ? () => {
       signInHere(app);
     } : undefined}/>;
   }
