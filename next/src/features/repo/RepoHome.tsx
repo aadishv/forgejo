@@ -1,13 +1,15 @@
 // Copyright 2026 The Forgejo Authors. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// A repository's home (/{owner}/{repo}): its name and kind, its latest
-// commit, top-level files and README from the code cache (by commit and blob
-// SHA: there offline once seen), and beside them the side pane
-// (AboutSidebar.tsx: what it is, its releases and languages). The tabs lead
-// to everything else. Its own chunk.
+// A repository's home (/{owner}/{repo}), the Code tab's first page: its
+// name and kind; above its files, like GitHub's, the branch picker (to that
+// branch's tree), the number of branches (the branches page) and the latest
+// commit with its History; its top-level files and its README from the code
+// cache (by commit and blob SHA: there offline once seen); and beside them
+// the side pane (AboutSidebar.tsx: what it is, its releases and languages).
+// The tabs lead to everything else. Its own chunk.
 
-import {BookMarked, Folder, FolderGit2, GitBranch, SquarePen} from 'lucide-react';
+import {Code2, Folder, FolderGit2, GitBranch, History, SquarePen} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useEffect, useMemo} from 'react';
 import {whenIdle} from '../../app/lazy.tsx';
@@ -20,7 +22,10 @@ import {useApp} from '../../app/store.ts';
 import {CodeSource} from '../../code/source.ts';
 import type {APITree, APITreeEntry} from '../../protocol/types.gen.ts';
 import {Badge, Button, EmptyState, Icon, ListRow, SkeletonText} from '../../ui/index.ts';
+import {codeSplat} from '../../code/refs.ts';
 import {refTable, useLoad, useSource} from '../code/hooks.ts';
+import {CodeLink} from '../code/nav.tsx';
+import {RefMenu} from '../code/RefMenu.tsx';
 import {ReadmePanel, readmeOf} from '../code/Rendered.tsx';
 import {Unloaded} from '../code/states.tsx';
 import {entryParts, FilesPanel, RefCommit, treeOrder} from '../code/tree.tsx';
@@ -34,7 +39,7 @@ export function RepoHome() {
   if (repoId === undefined) {
     return (
       <>
-        <RepoHeader owner={owner} repo={repo} repoId={undefined} icon={BookMarked} title="Overview"/>
+        <RepoHeader owner={owner} repo={repo} repoId={undefined} icon={Code2} title="Code" home/>
         <PageBody><Unavailable owner={owner} repo={repo}/></PageBody>
       </>
     );
@@ -46,7 +51,7 @@ const RepoHomePage = observer(function RepoHomePage({owner, repo, repoId}: {owne
   const app = useApp();
   return (
     <>
-      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={BookMarked} title="Overview">
+      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={Code2} title="Code" home>
         <Button size="sm" variant="ghost" icon={SquarePen} shortcut={shortcutHint('create')} tooltip="New issue in this repository" onClick={() => {
           openCreate(app, repoId);
         }}>New issue</Button>
@@ -79,7 +84,7 @@ const Summary = observer(function Summary({repoId}: {repoId: number}) {
   );
 });
 
-/** At most this many top-level entries are listed (the Code tab has them all). */
+/** At most this many top-level entries are listed (the branch's tree in the code view has them all). */
 const MAX_ENTRIES = 60;
 
 /** The default branch's latest commit, its top-level files and its README. */
@@ -97,11 +102,31 @@ const Files = observer(function Files({owner, repo, repoId}: {owner: string; rep
       </FilesPanel>
     );
   }
-  const title = <RefCommit owner={owner} repo={repo} repoId={repoId} kind="branch" name={branch} sha={sha}/>;
-  return <Tree owner={owner} repo={repo} repoId={repoId} sha={sha} branch={branch} title={title}/>;
+  // GitHub's bar above the files: the branch picker and how many branches there are (the branches page).
+  const count = refs.branches.size;
+  const toolbar = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <RefMenu owner={owner} repo={repo} repoId={repoId} at={{kind: 'branch', ref: branch, sha, path: ''}} view="src"/>
+      <Button size="sm" variant="ghost" asChild>
+        <CodeLink owner={owner} repo={repo} to="branches">
+          <Icon icon={GitBranch} size="sm"/><span className="tabular-nums">{`${String(count)} ${count === 1 ? 'branch' : 'branches'}`}</span>
+        </CodeLink>
+      </Button>
+    </div>
+  );
+  // The latest commit's bar, with the history on the right (API v1 has no commit count the pool holds: "History").
+  const title = <RefCommit owner={owner} repo={repo} repoId={repoId} kind="branch" name={branch} sha={sha} showRef={false}/>;
+  const history = (
+    <Button size="sm" variant="ghost" asChild>
+      <CodeLink owner={owner} repo={repo} to={codeSplat('commits', {kind: 'branch', ref: branch})}><Icon icon={History} size="sm"/>History</CodeLink>
+    </Button>
+  );
+  return <Tree owner={owner} repo={repo} repoId={repoId} sha={sha} branch={branch} title={title} toolbar={toolbar} actions={history}/>;
 });
 
-function Tree({owner, repo, repoId, sha, branch, title}: {owner: string; repo: string; repoId: number; sha: string; branch: string; title: ReactNode}) {
+function Tree({owner, repo, repoId, sha, branch, title, toolbar, actions}: {
+  owner: string; repo: string; repoId: number; sha: string; branch: string; title: ReactNode; toolbar: ReactNode; actions: ReactNode;
+}) {
   const app = useApp();
   const src = useSource();
   const click = useLinkClick();
@@ -123,7 +148,8 @@ function Tree({owner, repo, repoId, sha, branch, title}: {owner: string; repo: s
   const all = hrefOf(app, codePath(owner, repo, `src/branch/${branch}`));
   return (
     <>
-      <FilesPanel title={title} actions={<Button size="sm" variant="ghost" asChild><a href={all} onClick={(e) => click(e, all)}>Browse code</a></Button>}>
+      {toolbar}
+      <FilesPanel title={title} actions={actions}>
         {tree.state === 'ready' ?
           entries.slice(0, MAX_ENTRIES).map((e) => <EntryRow key={e.name} owner={owner} repo={repo} branch={branch} entry={e}/>) :
           <Unloaded loaded={tree} what="This repository's files" skeleton={<div className="px-3 py-3"><SkeletonText lines={5}/></div>}/>}

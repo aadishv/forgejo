@@ -9,6 +9,11 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/explore', '/dev.keys', '/user/login', '/explore/repos', '/api/v1', '/acme/repo/issues/0', '/acme/repo/issues/x', '/acme/repo/wiki', '/api/v1/issues/1', '/.x/repo/issues', '/acme/repo/issues/1/files', '/user/login', '/acme/repo/pulls/new-0f8fad5b-d9cb-469f-a165-70867728950e', '/acme/repo/issues/new-x']) {
     expect(isSpaRoute(p), p).toBe(false);
   }
+  // Comparisons (spa.go compareAddress): a pasted compare address opens the app's page for it.
+  for (const p of ['/acme/repo/compare', '/acme/repo/compare/feature', '/acme/repo/compare/main...feature/x', '/acme/repo/compare/main...alice:feature']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/acme/repo/compare/main..feature', '/acme/repo/compare/main...feature.diff', '/acme/repo/compare/feature.patch', '/acme/repo/compare/main...', '/acme/repo/compare/...x']) {
+    expect(isSpaRoute(p), p).toBe(false);
+  }
   // The classic page asked for by name, and an owner's profile tabs, are classic.
   expect(isSpaRoute('/acme/repo/issues', '?ui=classic')).toBe(false);
   expect(isSpaRoute('/acme', '?tab=activity')).toBe(false);
