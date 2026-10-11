@@ -229,6 +229,24 @@
   min-width: max(100%, calc(var(--code-chars, 0) * var(--code-char) + var(--thread-indent) + var(--spacing) * 12));
 }
 
+/* A file's, a blame's or a log's lines (Lines): the longest line's width (--code-chars) past the gutter
+ * (--lines-gutter: a line number, or the blame column and one), so every row is as wide as the widest and
+ * a short line's sticky gutter stays at the pane's left edge when the pane scrolls sideways. */
+@utility min-w-lines {
+  /* stylelint-disable-next-line scale-unlimited/declaration-strict-value -- tokens only, combined at the element */
+  min-width: max(100%, calc(var(--code-chars, 0) * var(--code-char) + var(--lines-gutter, var(--spacing-gutter)) + var(--spacing) * 10));
+}
+
+/* The blame view's gutter: the blame column and the line number. */
+@utility lines-blame {
+  --lines-gutter: calc(var(--spacing-blame) + var(--spacing-gutter));
+}
+
+/* As wide as a Lines pane (its scroll container publishes --lines-width): a step header pinned with sticky left-0. */
+@utility w-lines {
+  width: var(--lines-width, 100%);
+}
+
 /* A diff's comment threads start under the code (past the line numbers). */
 @utility pl-thread {
   padding-left: var(--thread-indent);

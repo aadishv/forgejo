@@ -157,7 +157,7 @@ async function keepAvatars(urls: string[]): Promise<void> {
     }
     const site = sitePathOf(url.pathname, SUB);
     if (url.origin !== sw.location.origin || site === undefined || !isAvatarPath(site) || await cache.match(url.href)) continue;
-    const res = await fetch(url.href, {credentials: 'same-origin'}).catch(() => undefined);
+    const res = await fetch(url.href, {credentials: 'same-origin', signal: AbortSignal.timeout(AVATAR_MS)}).catch(() => undefined);
     if (res?.ok && res.type === 'basic') await cache.put(url.href, res).catch(() => undefined);
   }
 }
@@ -187,6 +187,11 @@ sw.addEventListener('fetch', (e) => {
 
 /** Avatars kept at most (oldest first out). */
 const AVATARS_MAX = 500;
+/**
+ * How long an avatar may take before the kept copy answers (or the request fails): a stalled network never holds
+ * one of the browser's six connections to the instance for good (QA: avatars held them for minutes in a stall).
+ */
+const AVATAR_MS = 8000;
 
 /**
  * An avatar: the network first (a changed picture shows), a copy kept for when the network is not there
@@ -196,7 +201,7 @@ async function avatar(req: Request): Promise<Response> {
   if (!await alive()) return fetch(req);
   const cache = await caches.open(AVATAR_CACHE);
   try {
-    const res = await fetch(req);
+    const res = await fetch(req, {signal: AbortSignal.timeout(AVATAR_MS)});
     if (res.ok && res.type === 'basic') {
       void cache.put(req, res.clone()).then(async () => {
         const keys = await cache.keys();

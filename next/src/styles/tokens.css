@@ -205,7 +205,7 @@
    * the indent of a diff's comment threads (under the two line-number gutters and the +/− column). */
   --code-tab-size: 4;
   --code-char: 1ch;
-  --thread-indent: calc(var(--spacing-gutter) * 2 + var(--spacing) * 3);
+  --thread-indent: calc(var(--spacing-gutter) * 2 + var(--spacing-control-sm)); /* two line numbers and the +/− slot */
 
   /* Disabled controls. */
   --opacity-disabled: 0.5;

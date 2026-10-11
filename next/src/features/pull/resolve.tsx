@@ -29,6 +29,24 @@ export function conversationRoot(pool: Pool, c: Comment): Entity<'Comment'> | un
   return root;
 }
 
+/**
+ * The comments of the conversation `root` starts, in the order they were posted (the root first): each reply is a
+ * review of its own in Forgejo, shown in the thread (the Conversation tab, as the Files tab and classic do).
+ */
+export function conversationComments(pool: Pool, root: Comment): Entity<'Comment'>[] {
+  const out: Entity<'Comment'>[] = [];
+  for (const o of pool.model('Comment').by('issue_id', root.issue_id)) {
+    if (o.id <= 0 || o.get('type') !== root.type || o.get('path') !== root.path || o.get('line') !== root.line) continue;
+    out.push(o);
+  }
+  return out.sort((a, b) => a.get('created_at').localeCompare(b.get('created_at')) || a.id - b.id);
+}
+
+/** Whether a code comment starts its conversation (else it is a reply, shown in the thread it answers). */
+export function startsConversation(pool: Pool, c: Comment): boolean {
+  return conversationRoot(pool, c)?.id === c.id;
+}
+
 /** Who resolved the conversation (0: open), as the user sees it. */
 export function useResolver(root: Entity<'Comment'> | undefined): number {
   const overlay = useOverlay();

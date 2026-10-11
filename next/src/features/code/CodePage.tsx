@@ -8,11 +8,11 @@
 // by SHA and cached (code/source.ts); refs resolve from the synced branches
 // and tags, so what was seen once is there offline.
 
-import {useParams} from '@tanstack/react-router';
+import {useNavigate, useParams} from '@tanstack/react-router';
 import {Code2} from 'lucide-react';
-import {type ReactNode, useState} from 'react';
+import {type ReactNode, useEffect, useState} from 'react';
 import {PageBody} from '../../app/shell/Frame.tsx';
-import {parseCodePath, shortSha} from '../../code/refs.ts';
+import {abbreviatedSha, parseCodePath, shortSha} from '../../code/refs.ts';
 import {Missing} from '../../app/Missing.tsx';
 import {RepoHeader, Unavailable, useRepoPage} from '../repo/repoPage.tsx';
 import {ActionsView, RunView} from './Actions.tsx';
@@ -23,6 +23,8 @@ import {SrcView} from './Src.tsx';
 import {EmptyRepo} from './states.tsx';
 import {observer} from 'mobx-react-lite';
 import {usePool} from '../issues/cells.tsx';
+import {useLoad, useSource} from './hooks.ts';
+import {Unloaded} from './states.tsx';
 
 export interface CodeViewProps {
   owner: string;
@@ -77,6 +79,10 @@ export const CodePage = observer(function CodePage() {
     );
   }
   const props: CodeViewProps = {owner, repo, repoId, splat};
+  // An abbreviated SHA (a typed or pasted address): resolved once, then the full SHA's address (QA: "Branch or tag
+  // not found" for /src/commit/7af171c9e8/go.mod).
+  const short = abbreviatedSha(splat);
+  if (short) return <ExpandSha view={props} short={short.short} expand={short.expand}/>;
   const repoEmpty = pool.model('Repository').get(repoId)?.get('empty') === true;
   const route = parseCodePath(splat);
   if (!route) {
@@ -112,3 +118,21 @@ export const CodePage = observer(function CodePage() {
       return <RunView {...props} key={`${String(repoId)}:${String(route.run)}`} run={route.run} job={route.job}/>;
   }
 });
+
+/** Resolves an abbreviated SHA with Forgejo and replaces the address with the full one's. */
+function ExpandSha({view, short, expand}: {view: CodeViewProps; short: string; expand: (sha: string) => string}) {
+  const src = useSource();
+  const navigate = useNavigate();
+  const info = useLoad(`commit:${String(view.repoId)}:${short}`, () => undefined, () => src.commit(view.repoId, short));
+  const full = info.state === 'ready' ? info.value.sha : undefined;
+  useEffect(() => {
+    if (full) void navigate({to: '/-/next/code/$owner/$repo/$', params: {owner: view.owner, repo: view.repo, _splat: expand(full)}, replace: true, hash: true});
+  }, [full, navigate, view.owner, view.repo, expand]);
+  return (
+    <CodeFrame view={view} title={short}>
+      {() => (info.state === 'ready' ? null : info.state === 'error' && (info.status === 404 || info.status === 422) ?
+        <Missing what={`The commit ${short}`} description="No commit of this repository starts with these characters."/> :
+        <Unloaded loaded={info} what={`The commit ${short}`}/>)}
+    </CodeFrame>
+  );
+}

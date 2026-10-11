@@ -8,7 +8,8 @@
 // in this tab paints highlighted in its first frame (memory cache), so
 // switching between files never waits.
 
-import {useNavigate, useRouterState} from '@tanstack/react-router';
+import {useNavigate, useRouter, useRouterState} from '@tanstack/react-router';
+import {rememberRow} from '../../app/listReturn.ts';
 import {ChevronDown, File, Folder, FolderGit2, GitBranch, GitCommitHorizontal, History, Tag} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -26,7 +27,7 @@ import {usePool} from '../issues/cells.tsx';
 import {ago} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {hasRefs, type Loaded, refTable, useLoad, useSource} from './hooks.ts';
-import {Lines, type LinesHandle} from './Lines.tsx';
+import {Lines, type LinesHandle, maxChars} from './Lines.tsx';
 import {RowList} from './RowList.tsx';
 import {CodeLink, codeTo, useCodeRows} from './nav.tsx';
 import {Unloaded} from './states.tsx';
@@ -85,8 +86,14 @@ const SrcAt = observer(function SrcAt(props: SrcProps & {at: Resolved}) {
   const title = <Breadcrumbs owner={props.owner} repo={props.repo} at={at}/>;
   // Backspace or Alt+↑, from a directory or a file, from anywhere on the page: up a directory.
   const navigate = useNavigate();
+  const router = useRouter();
   const up = () => {
-    if (at.path) void navigate(codeTo(props.owner, props.repo, codeSplat('src', at, parent)));
+    if (!at.path) return;
+    const to = codeTo(props.owner, props.repo, codeSplat('src', at, parent));
+    // The parent opens with its cursor on where you came from (Finder's, Linear's way back up).
+    const there = router.buildLocation(to);
+    rememberRow(`${there.pathname}${there.searchStr}`, name);
+    void navigate(to);
   };
   useShortcutScope('code');
   useShortcut('code.up', up);
@@ -319,6 +326,7 @@ export function hashRange(hash: string): [number, number] | undefined {
 
 const TextFile = observer(function TextFile({repoId, entry, at, text, scroller, toolbar}: FileProps & {text: string; toolbar?: ReactNode}) {
   const lines = useMemo(() => splitLines(text), [text]);
+  const chars = useMemo(() => maxChars(lines), [lines]);
   const hl = useHighlight(repoId, entry.sha, at.path, text);
   // The lines named by the address's #L…: tinted, scrolled to — when the page opens and whenever the hash changes
   // (a click on a line number, a link to another line of the same file, Back).
@@ -347,7 +355,7 @@ const TextFile = observer(function TextFile({repoId, entry, at, text, scroller, 
   return (
     <>
       <FileMeta lines={lines.length} size={entry.size}>{toolbar}</FileMeta>
-      <Lines ref={view} count={lines.length} scroller={scroller} line={line} label={`${at.path}, ${String(lines.length)} lines`} initial={initial}/>
+      <Lines ref={view} count={lines.length} scroller={scroller} line={line} label={`${at.path}, ${String(lines.length)} lines`} initial={initial} chars={chars}/>
     </>
   );
 });
@@ -400,6 +408,7 @@ const BlameView = observer(function BlameView({owner, repo, repoId, entry, at, t
   const key = `blame:${String(repoId)}:${at.sha}:${at.path}`;
   const blame = useLoad(key, () => src.peek<APIBlame>(key), () => src.blame(repoId, at.sha, at.path));
   const lines = useMemo(() => splitLines(text), [text]);
+  const chars = useMemo(() => maxChars(lines), [lines]);
   const hl = useHighlight(repoId, entry.sha, at.path, text);
   // Per line: the part it belongs to (index), and whether it starts the part.
   const parts = useMemo(() => {
@@ -438,7 +447,7 @@ const BlameView = observer(function BlameView({owner, repo, repoId, entry, at, t
       <FileMeta lines={lines.length} size={entry.size}>
         {blame.value.uses_ignore_revs && <span>Ignoring the revisions in .git-blame-ignore-revs</span>}
       </FileMeta>
-      <Lines count={lines.length} scroller={scroller} line={line} label={`Blame of ${at.path}`}/>
+      <Lines count={lines.length} scroller={scroller} line={line} label={`Blame of ${at.path}`} chars={chars} blame/>
     </>
   );
 });

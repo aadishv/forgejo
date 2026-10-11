@@ -26,6 +26,22 @@ export function isSha(s: string): boolean {
   return SHA.test(s);
 }
 
+/** An abbreviated commit SHA (7 or more hex digits, not a full one): typed or pasted addresses carry them. */
+const SHORT_SHA = /^[0-9a-f]{7,63}$/;
+
+/**
+ * A code path that names a commit by an abbreviated SHA (`commit/7af171c9e8`, `src/commit/7af171c9e8/go.mod`,
+ * `commits/commit/…`, `blame/commit/…`): the abbreviation and the path with the full SHA in its place. The app
+ * addresses commits by full SHA only (immutable); the page resolves the abbreviation once and goes on to that.
+ */
+export function abbreviatedSha(splat: string): {short: string; expand: (sha: string) => string} | undefined {
+  const segs = splat.split('/');
+  const at = segs[0] === 'commit' ? 1 : (segs[0] === 'src' || segs[0] === 'blame' || segs[0] === 'commits') && segs[1] === 'commit' ? 2 : -1;
+  const short = segs[at];
+  if (at < 0 || !short || isSha(short) || !SHORT_SHA.test(short)) return undefined;
+  return {short, expand: (sha) => segs.map((s, i) => (i === at ? sha : s)).join('/')};
+}
+
 /**
  * The last segment of every code URL the UI makes: the server takes a path
  * below the UI's base ending in "name.ext" for a build file (404), and a file

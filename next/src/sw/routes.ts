@@ -4,7 +4,7 @@
 // What the service worker (sw.ts) decides about a request, as pure
 // functions (tested in routes.test.ts against B8's spaRoutes table).
 
-import {parseCodePath} from '../code/refs.ts';
+import {abbreviatedSha, parseCodePath} from '../code/refs.ts';
 
 /** The service worker's caches are named with this prefix and the build version. */
 export const CACHE_PREFIX = 'forgejo-next-';
@@ -85,9 +85,10 @@ function codeAddress(rest: string[]): boolean {
   if (head === 'pulls') return rest.length === 3 && /^[1-9]\d{0,17}$/.test(second ?? '') && (rest[2] === 'files' || rest[2] === 'commits');
   if (head === 'src' || head === 'blame' || head === 'commits') {
     if (rest.length === 1) return true;
-    return (second === 'branch' || second === 'tag' || second === 'commit') && rest.length >= 3 && parseCodePath(rest.join('/')) !== undefined;
+    return (second === 'branch' || second === 'tag' || second === 'commit') && rest.length >= 3 &&
+      (parseCodePath(rest.join('/')) !== undefined || abbreviatedSha(rest.join('/')) !== undefined);
   }
-  return head !== undefined && head !== 'src' && parseCodePath(rest.join('/')) !== undefined;
+  return head !== undefined && head !== 'src' && (parseCodePath(rest.join('/')) !== undefined || abbreviatedSha(rest.join('/')) !== undefined);
 }
 
 /** A tab of the classic profile other than its repositories (spa.go `profileTab`). */

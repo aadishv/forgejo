@@ -7,7 +7,7 @@ import {parseAnsi} from './ansi.ts';
 import {keyRepo, MemoryLru, toEvict} from './cache.ts';
 import {langOf} from './lang.ts';
 import {applyLog, emptyLog, stepOf} from './logs.ts';
-import {codeSplat, isSha, parseCodePath, resolveName, resolveRef, type RefTable, withEnd} from './refs.ts';
+import {abbreviatedSha, codeSplat, isSha, parseCodePath, resolveName, resolveRef, type RefTable, withEnd} from './refs.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -238,4 +238,14 @@ test('code paths with "." or ".." segments are refused (they would resolve away 
   expect(parseCodePath('src/branch/main/./a')).toBeUndefined();
   expect(() => encodePath('a/../b')).toThrow();
   expect(encodePath('a b/c#d')).toBe('a%20b/c%23d');
+});
+
+test('abbreviatedSha: a commit named by 7 or more hex digits, in the commit, src, blame and commits views', () => {
+  const full = '7af171c9e814d0415ca473b1c405d239dbed0768';
+  expect(abbreviatedSha('commit/7af171c9e8')?.expand(full)).toBe(`commit/${full}`);
+  expect(abbreviatedSha('src/commit/7af171c/go.mod/-')?.expand(full)).toBe(`src/commit/${full}/go.mod/-`);
+  expect(abbreviatedSha('commits/commit/7af171c9')?.short).toBe('7af171c9');
+  expect(abbreviatedSha(`commit/${full}`)).toBeUndefined();
+  expect(abbreviatedSha('commit/7af171')).toBeUndefined();
+  expect(abbreviatedSha('src/branch/7af171c9e8')).toBeUndefined();
 });

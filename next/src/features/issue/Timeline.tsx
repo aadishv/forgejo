@@ -39,7 +39,7 @@ import {afterPaint} from '../../app/paint.ts';
 import {textOfMarkup} from '../../app/trusted.ts';
 import {Reactions} from './Reactions.tsx';
 import {blocking, IssueLink} from './Sidebar.tsx';
-import {conversationRoot, ResolveButton, ResolvedFold, useResolver} from '../pull/resolve.tsx';
+import {conversationComments, conversationRoot, ResolveButton, ResolvedFold, startsConversation, useResolver} from '../pull/resolve.tsx';
 
 /** Above this many items the timeline is virtualized. */
 const VIRTUALIZE_FROM = 50;
@@ -55,6 +55,14 @@ function useItems(issueId: number): Item[] {
   // The pool's comments and the ones posted here not synced yet (a deleted one hides itself: CommentBody).
   const comments = issueComments(pool, overlay, issueId, intents.remapped);
   const reviews = pool.model('Review').by('issue_id', issueId);
+  // A comment-only review without a body whose code comments all answer other threads is a reply: it shows in those
+  // threads, not as a "reviewed" card of its own with the snippet again (QA: Forgejo's Reply is such a review).
+  const repliesOnly = new Set<number>();
+  for (const r of reviews) {
+    if (r.data.state !== 'COMMENT' || r.data.body_html.trim()) continue;
+    const codes = [...pool.model('Comment').by('review_id', r.id)].filter((c) => c.data.type === 'code');
+    if (codes.length && codes.every((c) => !startsConversation(pool, c.data))) repliesOnly.add(r.id);
+  }
   return untracked(() => {
     const out: Item[] = [];
     for (const c of comments) {
@@ -64,7 +72,7 @@ function useItems(issueId: number): Item[] {
     }
     for (const r of reviews) {
       const st = r.data.state;
-      if (st === 'PENDING' || st === 'REQUEST_REVIEW') continue;
+      if (st === 'PENDING' || st === 'REQUEST_REVIEW' || repliesOnly.has(r.id)) continue;
       out.push({kind: 'review', id: r.id, at: r.data.created_at});
     }
     out.sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id);
@@ -180,8 +188,11 @@ const CommentItem = observer(function CommentItem({id, swapFrom}: {id: number; s
   return <EventLine comment={c} swapFrom={swapFrom}/>;
 });
 
-/** A comment's card: its header (with the viewer's actions), its body or editor, its reactions. */
-function CommentCard({c, type}: {c: Entity<'Comment'>; type: string}) {
+/**
+ * A comment's card: its header (with the viewer's actions), its body or editor, its reactions. An observer: its
+ * "edited" mark follows the comment (QA: it showed only after a reload).
+ */
+const CommentCard = observer(function CommentCard({c, type}: {c: Entity<'Comment'>; type: string}) {
   const [edit, setEdit] = useState(false);
   const actions = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
@@ -208,7 +219,7 @@ function CommentCard({c, type}: {c: Entity<'Comment'>; type: string}) {
       }}/>
     </Card>
   );
-}
+});
 
 const REVIEW_LOOK: Record<string, {tone: BadgeTone; text: string}> = {
   APPROVED: {tone: 'success', text: 'approved'},
@@ -222,10 +233,14 @@ const ReviewItem = observer(function ReviewItem({id}: {id: number}) {
   if (!r) return null;
   const look = REVIEW_LOOK[r.get('state')] ?? {tone: 'neutral' as const, text: 'reviewed'};
   const html = r.get('body_html');
-  const codes = [...pool.model('Comment').by('review_id', id)].filter((c) => c.get('type') === 'code');
+  // The conversations this review started, in file and line order (the pool's order differs between a first load
+  // and a reload: QA saw the threads swap); its replies to other threads show in those threads.
+  const codes = [...pool.model('Comment').by('review_id', id)].filter((c) => c.get('type') === 'code' && startsConversation(pool, c.data))
+    .sort((a, b) => a.get('path').localeCompare(b.get('path')) || Math.abs(a.get('line')) - Math.abs(b.get('line')) || a.id - b.id);
   return (
     <Card poster={r.get('reviewer_id')} original={r.get('original_author')} at={r.get('created_at')}
-      badge={<Badge tone={look.tone}>{look.text}{r.get('stale') ? ' · outdated' : ''}{r.get('dismissed') ? ' · dismissed' : ''}</Badge>}>
+      // A dismissed verdict no longer counts: not the live verdict's colour (QA: a dismissed approval looked approved).
+      badge={<Badge tone={r.get('dismissed') ? 'neutral' : look.tone}>{look.text}{r.get('stale') ? ' · outdated' : ''}{r.get('dismissed') ? ' · dismissed' : ''}</Badge>}>
       {html && <Markdown html={html}/>}
       {codes.map((c) => <CodeComment key={c.id} c={c}/>)}
     </Card>
@@ -291,6 +306,7 @@ const CodeComment = observer(function CodeComment({c}: {c: Entity<'Comment'>}) {
         </div>
       )}
       <Markdown html={c.get('body_html')}/>
+      {conversationComments(pool, c.data).filter((o) => o.id !== c.id).map((o) => <ThreadReply key={o.id} c={o}/>)}
       {issue && !c.get('invalidated') && (replying ?
         <div className="flex flex-col gap-2">
           <MarkdownField repoId={issue.repo_id} label="Reply" value={text} rows={2} autoFocus onChange={setText} onSubmit={reply} onCancel={() => {
@@ -309,6 +325,23 @@ const CodeComment = observer(function CodeComment({c}: {c: Entity<'Comment'>}) {
           }}>Reply</Button>
           {root && issueEntity && <ResolveButton root={root} issue={issueEntity}/>}
         </div>)}
+    </div>
+  );
+});
+
+/** A reply in a code conversation, under the comment it answers: who, when, the text. */
+const ThreadReply = observer(function ThreadReply({c}: {c: Entity<'Comment'>}) {
+  return (
+    <div className="flex gap-2 border-t border-border-subtle pt-2">
+      <UserAvatar id={c.get('poster_id')}/>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-x-2 text-sm">
+          <Who id={c.get('poster_id')} fallback={c.get('original_author')}/>
+          <When at={c.get('created_at')}/>
+          <Edited updated={c.get('updated_at')} version={c.get('content_version')}/>
+        </span>
+        <Markdown html={c.get('body_html')}/>
+      </div>
     </div>
   );
 });
@@ -424,21 +457,20 @@ const TeamName = observer(function TeamName({id}: {id: number}) {
 });
 
 /**
- * A dependency event, from this issue's side: Forgejo writes the same event on both issues, so the direction comes
- * from the dependencies this device knows ("added a dependency: blocked by #12" / "…: blocks #12").
+ * A dependency event, from this issue's side: "blocked by #12" / "blocks #12". Forgejo writes the same event on both
+ * issues; the server tells which side this is (dependency_role), else the dependencies this device knows do.
  */
 const DependencyEvent = observer(function DependencyEvent({d}: {d: Comment}) {
   const pool = usePool();
   const overlay = useOverlay();
   const add = d.type === 'add_dependency';
   const other = <IssueRef id={d.dependent_issue_id} from={d.issue_id}/>;
-  const blockedBy = viewMembers(pool, overlay, 'IssueDependency', d.issue_id).has(d.dependent_issue_id);
-  const blocks = [...pool.model('IssueDependency').by('dependency_id', d.issue_id)].some((x) => x.get('issue_id') === d.dependent_issue_id) ||
-    (blocking.get(d.issue_id) ?? []).includes(d.dependent_issue_id);
-  // One sentence on both issues, the direction added where this device knows it (a dependency removed since has
-  // none: Forgejo's two events are alike), so the two sides never read as different things.
-  if (add && blockedBy) return <>added a dependency: blocked by {other}</>;
-  if (add && blocks) return <>added a dependency: blocks {other}</>;
+  const role = d.dependency_role;
+  const blockedBy = role === 'blocked' || (!role && viewMembers(pool, overlay, 'IssueDependency', d.issue_id).has(d.dependent_issue_id));
+  const blocks = role === 'blocks' || (!role && ([...pool.model('IssueDependency').by('dependency_id', d.issue_id)].some((x) => x.get('issue_id') === d.dependent_issue_id) ||
+    (blocking.get(d.issue_id) ?? []).includes(d.dependent_issue_id)));
+  if (blockedBy) return <>{add ? 'marked this as blocked by' : 'marked this as no longer blocked by'} {other}</>;
+  if (blocks) return <>{add ? 'marked this as blocking' : 'marked this as no longer blocking'} {other}</>;
   return <>{add ? 'added a dependency with' : 'removed a dependency with'} {other}</>;
 });
 

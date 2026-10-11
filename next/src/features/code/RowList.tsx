@@ -77,6 +77,14 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen: openItem, o
   // takes the focus, Linear), or always for a page-owned cursor.
   const [focused, setFocused] = useState(false);
   const [moved, setMoved] = useState(false);
+  // Another page in the same list (a directory opened from the tree: the component stays): its own cursor, at the
+  // top, not the previous directory's index (QA: docs/ opened with an unrelated file under the cursor).
+  const [page, setPage] = useState(here);
+  if (page !== here) {
+    setPage(here);
+    setOwn(0);
+    setMoved(false);
+  }
   const shown = focused || moved || owned !== undefined;
   const list = useRef<HTMLDivElement | null>(null);
   const [place, margin] = useScrollMargin(scroller);
@@ -87,7 +95,6 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen: openItem, o
   // eslint-disable-next-line react-hooks/incompatible-library -- the virtualizer re-renders this list itself (rows are not memoized)
   const v = useVirtualizer({count: items.length, getScrollElement: () => scroller, estimateSize: rowSize, overscan: 10, scrollMargin: margin});
   useShortcutScope('list');
-  const hasItems = items.length > 0;
   useLayoutEffect(() => {
     const back = rememberedRow(here);
     if (owned !== undefined || back === undefined || moved) return;
@@ -97,8 +104,9 @@ function RowListImpl<T>({items, scroller, label, keyOf, row, onOpen: openItem, o
     setMoved(true);
     v.scrollToIndex(at, {align: 'auto'});
     focusList(list.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the rows are there
-  }, [hasItems]);
+    // Once the rows of this page are there: a directory's rows replace the previous one's (the list stays mounted).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows and the page
+  }, [items, here]);
   const move = (d: number) => {
     // The first J shows the cursor where it is (the first row), the next ones move it.
     const n = shown ? Math.max(0, Math.min(items.length - 1, cursor + d)) : cursor;

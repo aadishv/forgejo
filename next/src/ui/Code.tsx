@@ -182,9 +182,11 @@ export function BlameCell({first, summary, meta, children}: {first: boolean; sum
  * a status mark, the name, and its meta (a duration) on the right.
  */
 export function StepHeader({expanded, onToggle, mark, meta, children}: {expanded: boolean; onToggle: () => void; mark: ReactNode; meta?: ReactNode; children: ReactNode}) {
+  // Pinned to the pane's left edge (w-lines: as wide as the pane, not the longest line): a log scrolled sideways keeps
+  // its steps' names in view.
   return (
     <button type="button" aria-expanded={expanded} onClick={onToggle}
-      className="interactive flex h-line w-full items-center gap-2 bg-canvas px-3 text-left font-sans text-sm text-fg hover:bg-hover">
+      className="interactive sticky left-0 flex h-line w-lines items-center gap-2 bg-canvas px-3 text-left font-sans text-sm text-fg hover:bg-hover">
       {mark}
       <span className="min-w-0 flex-1 truncate font-medium">{children}</span>
       {meta && <span className="text-fg-subtle tabular-nums">{meta}</span>}

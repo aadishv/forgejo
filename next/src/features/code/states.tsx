@@ -12,23 +12,31 @@ import {usePool} from '../issues/cells.tsx';
 import type {ReactNode} from 'react';
 import {AvailableOffline} from '../../app/Available.tsx';
 import {missingWords} from '../../app/Missing.tsx';
+import {reach} from '../../app/online.ts';
 import {EmptyState, Skeleton} from '../../ui/index.ts';
 import type {Loaded} from './hooks.ts';
 
-/** `action`: the way on from a "Not found" (the list it would be in). */
-export function Unloaded({loaded, what, skeleton, action}: {loaded: Exclude<Loaded<unknown>, {state: 'ready'}>; what: string; skeleton?: ReactNode; action?: ReactNode}) {
+/**
+ * `action`: the way on from a "Not found" (the list it would be in). Not on this device: "Not available offline", or
+ * "Can't reach Forgejo" while the network is up but Forgejo is not answering (as the indicator says).
+ */
+export const Unloaded = observer(function Unloaded({loaded, what, skeleton, action}: {loaded: Exclude<Loaded<unknown>, {state: 'ready'}>; what: string; skeleton?: ReactNode; action?: ReactNode}) {
+  const app = useApp();
+  const r = reach(app.session?.data.status.connection);
   switch (loaded.state) {
     case 'loading':
       return skeleton ?? <div className="flex flex-col gap-2 px-6 py-4" aria-busy><Skeleton className="h-3 w-64"/><Skeleton className="h-3 w-48"/></div>;
     case 'offline':
-      return <EmptyState icon={CloudOff} title="Not available offline" description={missingWords(what).offline} action={<AvailableOffline/>}/>;
+      return r === 'unreachable' ?
+        <EmptyState icon={CloudOff} title="Can’t reach Forgejo" description={missingWords(what).unreachable} action={<AvailableOffline/>}/> :
+        <EmptyState icon={CloudOff} title="Not available offline" description={missingWords(what).offline} action={<AvailableOffline/>}/>;
     case 'error':
       if (loaded.status === 404) return <EmptyState icon={SearchX} title="Not found" description={missingWords(what).notFound} action={action}/>;
       if (loaded.status === 413) return <EmptyState icon={TriangleAlert} title="Too large to show here" description={missingWords(what).tooLarge}/>;
       if (loaded.message === 'signed out' || loaded.message.includes('SignedOut')) return <EmptyState icon={CloudOff} title="Signed out" description="Sign in again (the sync indicator above) to load this."/>;
       return <EmptyState icon={TriangleAlert} title="Could not load" description={loaded.message}/>;
   }
-}
+});
 
 /** A repository's clone URL over HTTP(S). */
 export function cloneUrl(appUrl: string, owner: string, repo: string): string {

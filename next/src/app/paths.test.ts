@@ -15,6 +15,9 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/actions/runs/3')).toBe('/-/next/code/acme/atlas/actions/runs/3/-');
   expect(nextPathOf('/acme/atlas/projects/1')).toBe('/-/next/projects/1');
   expect(nextPathOf('/acme/-/projects/3')).toBe('/-/next/projects/3');
+  // An abbreviated SHA: the code view resolves it.
+  expect(nextPathOf('/acme/atlas/commit/7af171c9e8')).toBe('/-/next/code/acme/atlas/commit/7af171c9e8/-');
+  expect(nextPathOf('/acme/atlas/commit/7af171')).toBeUndefined();
   expect(nextPathOf('/dev')).toBe('/dev');
   expect(nextPathOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
   // Forgejo's own pages and what the app does not render stay classic.
@@ -59,6 +62,8 @@ test('missing-content sentences agree with their subject', async () => {
 test('classic pages\' way back to the app: the app\'s page for the address, else Home', () => {
   expect(appPageOf('/acme/atlas/projects/1')).toBe('/-/next/projects/1');
   expect(appPageOf('/acme/-/projects/3')).toBe('/-/next/projects/3');
+  expect(appPageOf('/acme/-/projects')).toBe('/-/next/boards');
+  expect(appPageOf('/dev/-/projects')).toBe('/-/next/boards');
   expect(appPageOf('/acme/atlas/pulls/91/files')).toBe('/acme/atlas/pulls/91?tab=files');
   expect(appPageOf('/acme')).toBe('/acme');
   expect(appPageOf('/acme?tab=activity')).toBe('/acme');

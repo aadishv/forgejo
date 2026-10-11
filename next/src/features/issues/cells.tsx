@@ -10,7 +10,7 @@
 
 import {
   Circle, CircleCheck, CircleCheckBig, CircleDashed, CircleDot, CircleDotDashed, CircleEllipsis, CircleX, GitMerge, GitPullRequest,
-  CalendarClock, createLucideIcon, GitPullRequestClosed, OctagonAlert, Pin, SignalMedium,
+  CalendarClock, createLucideIcon, GitPullRequestClosed, OctagonAlert, Pin, SignalMedium, UserCheck, UserX,
 } from 'lucide-react';
 import {compareStructural, computed, type IComputedValue} from 'mobx';
 import {observer} from 'mobx-react-lite';
@@ -169,10 +169,10 @@ export const StatusCell = observer(function StatusCell({issue}: {issue: Entity<'
   );
 });
 
-/** The priority label's icon (an empty slot without one, so titles line up). */
-export const PriorityCell = observer(function PriorityCell({issue}: {issue: Entity<'Issue'>}) {
+/** The priority label's icon (an empty slot without one, so a list's titles line up; `slot` false: nothing). */
+export const PriorityCell = observer(function PriorityCell({issue, slot = true}: {issue: Entity<'Issue'>; slot?: boolean}) {
   const p = useLabelView(issue).priority;
-  if (!p) return <span aria-hidden className="size-4 shrink-0"/>;
+  if (!p) return slot ? <span aria-hidden className="size-4 shrink-0"/> : null;
   return (
     <Hint label={`Priority: ${scopedValue(p.name)}`}><LabelIcon icon={priorityIcon(p.name)} color={p.color}/></Hint>
   );
@@ -259,6 +259,30 @@ const CHECK_TONE = {success: 'text-success', failure: 'text-danger', pending: 't
 const CHECK_LABEL = {success: 'Checks passed', failure: 'Checks failed', pending: 'Checks running'} as const;
 
 /**
+ * The verdict of a pull request's reviews: changes requested wins over approved; each reviewer's latest approval or
+ * request for changes counts (a later comment-only review does not change it), dismissed ones do not. From the
+ * repository's ReviewVerdicts (synced with the repository: no need to open the pull request). `by`: who decided it.
+ */
+export function pullVerdict(pool: ReturnType<typeof usePool>, issueId: number): {verdict: 'changes' | 'approved' | undefined; by: number[]} {
+  const latest = new Map<number, string>();
+  for (const r of [...pool.model('ReviewVerdict').by('issue_id', issueId)].map((e) => e.data).sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    if (!r.reviewer_id || r.dismissed || (r.state !== 'APPROVED' && r.state !== 'REQUEST_CHANGES')) continue;
+    latest.set(r.reviewer_id, r.state);
+  }
+  const of = (state: string) => [...latest].flatMap(([id, st]) => (st === state ? [id] : []));
+  const changes = of('REQUEST_CHANGES');
+  if (changes.length) return {verdict: 'changes', by: changes};
+  const approved = of('APPROVED');
+  return approved.length ? {verdict: 'approved', by: approved} : {verdict: undefined, by: []};
+}
+
+const VERDICT = {
+  changes: {label: 'Changes requested', tone: 'danger', icon: UserX},
+  approved: {label: 'Approved', tone: 'success', icon: UserCheck},
+} as const;
+const VERDICT_TEXT = {changes: 'text-danger', approved: 'text-success'} as const;
+
+/**
  * A pull request's state in a row: draft, its checks at the head (as the merge box sums them), and the reviews'
  * verdict (changes requested wins over approved; each reviewer's latest review counts). Nothing for an issue.
  */
@@ -270,19 +294,13 @@ export const PullStateCell = observer(function PullStateCell({issue}: {issue: En
   const pr = [...pool.model('PullRequest').by('issue_id', issue.id)][0]?.data;
   const head = pr && !pr.merged ? poolHead(pool, pr) : undefined;
   const checks = pr && head ? checksOf(pool, pr, head).summary : 'none';
-  // The verdicts come with the repository (ReviewVerdict), not only once the pull request was opened (its Reviews).
-  const latest = new Map<number, string>();
-  for (const r of [...pool.model('ReviewVerdict').by('issue_id', issue.id)].map((e) => e.data).sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    if (!r.reviewer_id || r.dismissed) continue;
-    latest.set(r.reviewer_id, r.state);
-  }
-  const verdicts = [...latest.values()];
-  const review = verdicts.includes('REQUEST_CHANGES') ? 'changes' : verdicts.includes('APPROVED') ? 'approved' : undefined;
+  const review = pullVerdict(pool, issue.id).verdict;
   return (
     <>
       {draft && <Badge>Draft</Badge>}
-      {review === 'changes' && <Badge tone="danger">Changes requested</Badge>}
-      {review === 'approved' && <Badge tone="success">Approved</Badge>}
+      {/* On a narrow row the verdict is its icon (QA: a phone row's title was cut to a few characters by the badge). */}
+      {review && <span className="contents @max-md:hidden"><Badge tone={VERDICT[review].tone}>{VERDICT[review].label}</Badge></span>}
+      {review && <span className="contents @md:hidden"><Hint label={VERDICT[review].label}><Icon icon={VERDICT[review].icon} size="sm" className={VERDICT_TEXT[review]}/></Hint></span>}
       {checks !== 'none' && <Hint label={CHECK_LABEL[checks]}><Icon icon={CHECK_ICON[checks]} size="sm" className={CHECK_TONE[checks]}/></Hint>}
     </>
   );

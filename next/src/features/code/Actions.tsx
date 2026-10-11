@@ -25,7 +25,7 @@ import {usePool} from '../issues/cells.tsx';
 import {ago, fullDate} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {useSource} from './hooks.ts';
-import {Lines} from './Lines.tsx';
+import {lineChars, Lines} from './Lines.tsx';
 import {CodeLink, useCodeRows} from './nav.tsx';
 import {RepoClassic} from './Refs.tsx';
 import {RowList} from './RowList.tsx';
@@ -313,41 +313,73 @@ const JobLog = observer(function JobLog({repoId, job, scroller}: {repoId: number
     return out;
     // `count` and `steps` change as the log streams.
   }, [count, steps, closed]);
+  const toggle = useCallback((s: number) => {
+    setClosed((c) => {
+      const n = new Set(c);
+      if (n.has(s)) n.delete(s);
+      else n.add(s);
+      return n;
+    });
+  }, []);
+  const stepHeader = useCallback((s: number): ReactNode => {
+    const st = steps[s];
+    if (!st) return null;
+    const look = statusLook(st.status);
+    return (
+      <StepHeader expanded={!closed.has(s)} mark={<StatusDot tone={look.tone}/>}
+        meta={st.stopped && st.started ? duration(st.stopped - st.started) : look.text}
+        onToggle={() => {
+          toggle(s);
+        }}>{st.name}</StepHeader>
+    );
+  }, [steps, closed, toggle]);
   const line = useCallback((i: number): ReactNode => {
     const r = rows[i];
     if (!r) return null;
-    if (r.t === 'step') {
-      const st = steps[r.s];
-      if (!st) return null;
-      const look = statusLook(st.status);
-      return (
-        <StepHeader expanded={!closed.has(r.s)} mark={<StatusDot tone={look.tone}/>}
-          meta={st.stopped && st.started ? duration(st.stopped - st.started) : look.text}
-          onToggle={() => {
-            setClosed((c) => {
-              const n = new Set(c);
-              if (n.has(r.s)) n.delete(r.s);
-              else n.add(r.s);
-              return n;
-            });
-          }}>{st.name}</StepHeader>
-      );
-    }
+    if (r.t === 'step') return stepHeader(r.s);
     const l = log.lines[r.l];
     return (
       <CodeLine gutter={<LineNo n={r.l + 1}/>}>
         <AnsiText spans={ansiOf(l)}/>
       </CodeLine>
     );
-  }, [rows, steps, closed, log.lines]);
+  }, [rows, stepHeader, log.lines]);
+  // The step whose lines are at the top of the view stays pinned there (QA: tailing a log, which step was running
+  // scrolled away with its header).
+  const pinned = useCallback((top: number): ReactNode => {
+    for (let i = top; i >= 0; i--) {
+      const r = rows[i];
+      if (r?.t === 'step') return i === top ? null : stepHeader(r.s);
+    }
+    return null;
+  }, [rows, stepHeader]);
+  const chars = useMemo(() => {
+    let n = 0;
+    for (const l of log.lines) n = Math.max(n, widthOf(l));
+    return n;
+  }, [log.lines]);
   if (!count && !steps.length) {
     if (log.expired) return <EmptyState icon={Workflow} title="Log removed" description="This log was removed by the instance's log retention."/>;
     if (source === 'none' && !connectivity.online) return <EmptyState icon={Workflow} title="Not available offline" description="This job's log is not on this device."/>;
     if (feed.closed) return <EmptyState icon={Workflow} title="Log not available" description={feed.closed === 'limit' ? 'Too many logs are open in this browser: close one and come back.' : 'This log cannot be read (it does not exist, or you may not see it any more).'}/>;
+    // A job cancelled (or skipped) before a runner took it has no log, and waits for nothing (QA: "Waiting for a runner…").
+    if (finished(job.status) && !job.task_id) return <p className="px-4 py-3 text-sm text-fg-subtle">{`${statusLook(job.status).text}: this job did not run, so it has no log.`}</p>;
     return <p className="px-4 py-3 text-sm text-fg-subtle">{job.task_id ? 'Waiting for the log…' : 'Waiting for a runner…'}</p>;
   }
-  return <Lines count={rows.length} scroller={scroller} line={line} label={`Log of ${job.name}`} follow={!finished(job.status)}/>;
+  return <Lines count={rows.length} scroller={scroller} line={line} label={`Log of ${job.name}`} follow={!finished(job.status)} chars={chars} pinned={pinned}/>;
 });
+
+// A line's width in characters without its colour codes, per line object (a line is immutable once received).
+const widthCache = new WeakMap<LogLine, number>();
+
+function widthOf(l: LogLine): number {
+  let w = widthCache.get(l);
+  if (w === undefined) widthCache.set(l, w = lineChars(l.c.replace(ANSI_CODES, '')));
+  return w;
+}
+
+// eslint-disable-next-line no-control-regex -- the escape character starts every colour code
+const ANSI_CODES = /\x1b\[[0-9;?]*[A-Za-z]/g;
 
 // Parsed spans per line object (a line is immutable once received).
 const ansiCache = new WeakMap<LogLine, ReturnType<typeof parseAnsi>>();

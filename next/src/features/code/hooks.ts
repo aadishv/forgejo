@@ -7,7 +7,8 @@
 
 import {useEffect, useState} from 'react';
 import {useApp} from '../../app/store.ts';
-import {connectivity} from '../../app/online.ts';
+import {reach} from '../../app/online.ts';
+import {reaction} from 'mobx';
 import {codeSource, type CodeSource, NotCached} from '../../code/source.ts';
 import type {RefTable} from '../../code/refs.ts';
 import type {Pool} from '../../data/pool.ts';
@@ -42,7 +43,13 @@ export function useLoad<T>(key: string | undefined, peek: () => T | undefined, l
     current = {key, loaded: v === undefined ? {state: 'loading'} : {state: 'ready', value: v}};
     setState(current);
   }
-  const online = connectivity.online;
+  // Forgejo reachable again (back online, or a stall over): what could not load loads again (QA: after a stall the
+  // page kept "Not available offline" with Live back). The browser's online flag alone misses a stall.
+  const app = useApp();
+  const [epoch, setEpoch] = useState(0);
+  useEffect(() => reaction(() => reach(app.session?.data.status.connection), (r, prev) => {
+    if (r === 'online' && prev !== 'online') setEpoch((e) => e + 1);
+  }), [app]);
   const done = current.loaded.state === 'ready';
   useEffect(() => {
     if (key === undefined || done) return undefined;
@@ -60,9 +67,9 @@ export function useLoad<T>(key: string | undefined, peek: () => T | undefined, l
     return () => {
       live = false;
     };
-    // `online`: back online, a key that failed offline loads again.
+    // `epoch`: Forgejo reachable again, a key that failed meanwhile loads again.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load/peek are per key
-  }, [key, done, online]);
+  }, [key, done, epoch]);
   return current.loaded;
 }
 

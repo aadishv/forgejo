@@ -42,7 +42,7 @@ import {
 } from '../../ui/index.ts';
 import {MarkdownField, MarkdownPreview} from '../editor/Composer.tsx';
 import {Markdown} from '../issue/Markdown.tsx';
-import {usePool, UserAvatar, UserName} from '../issues/cells.tsx';
+import {pullVerdict, usePool, UserAvatar, UserName} from '../issues/cells.tsx';
 import {agoWords, fullDate} from '../issues/format.ts';
 import {statusLook, statusTime} from '../code/Actions.tsx';
 import {checksOf, cleanDescription, unfinishedChecks} from './checks.ts';
@@ -642,14 +642,16 @@ export const MergeBox = observer(function MergeBox({issue}: {issue: Entity<'Issu
   const write = canWrite(session, pr.base_repo_id);
   const path = repo ? `/repos/${encodeURIComponent(repo.owner_name)}/${encodeURIComponent(repo.name)}/pulls/${String(pr.number)}` : '';
   /** An online action: what it did (said when it succeeds), what failed (said with the server's reason). */
-  const run = (words: {done: string; failed: string}, req: Parameters<typeof online>[1]) => {
+  const run = (words: {done: string; failed: string; refusal?: string}, req: Parameters<typeof online>[1]) => {
     setBusy(true);
     online(app, req).then(() => {
       notify(app, {tone: 'success', title: words.done});
     }, (err: unknown) => {
       // A short, human reason (the server's own words only when they are a sentence for people). Retry only when
-      // trying again may help: Forgejo refusing it (a 4xx) would refuse it again.
-      notify(app, {tone: 'danger', title: words.failed, description: failureText(err), ...refused(err) ? {} : {action: {label: 'Retry', run: () => {
+      // trying again may help: Forgejo refusing it (a 4xx) would refuse it again. `refusal`: what an error means for
+      // this request whatever its status (API v1 answers a fast-forward that cannot apply with 500, not 409).
+      const known = words.refusal !== undefined && err instanceof RequestFailed && err.status >= 400;
+      notify(app, {tone: 'danger', title: words.failed, description: known && words.refusal ? words.refusal : failureText(err), ...known || refused(err) ? {} : {action: {label: 'Retry', run: () => {
         run(words, req);
       }}}});
     }).finally(() => {
@@ -664,6 +666,7 @@ export const MergeBox = observer(function MergeBox({issue}: {issue: Entity<'Issu
   const checks = sum?.summary ?? 'none';
   // Checks still running (the merge dialog says how many; merging waits for them by default).
   const unfinished = sum ? unfinishedChecks(pool, sum) : 0;
+  const verdict = pullVerdict(pool, issue.id);
   const behind = pr.commits_behind > 0 ? ` · ${String(pr.commits_behind)} behind ${pr.base_branch}` : '';
   // With conflicts nothing merges, and updating the branch by a merge would conflict the same way: both are disabled
   // with the reason (they were offered and then failed).
@@ -680,7 +683,11 @@ export const MergeBox = observer(function MergeBox({issue}: {issue: Entity<'Issu
   } else if (closed) state = 'Closed without merging';
   else if (conflict) state = <><StatusDot tone="danger"/> Conflicts with {pr.base_branch}{pr.conflicted_files.length ? <>: {pr.conflicted_files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<Code>{f}</Code></Fragment>)}</> : ''}</>;
   else if (pr.status === 'checking') state = <><StatusDot tone="warning"/> Checking whether it can be merged…</>;
-  else if (checks === 'pending') state = <><StatusDot tone="warning"/> Checks are not done yet{behind}</>;
+  else if (verdict.verdict === 'changes') {
+    // A reviewer's latest word is "changes requested" (QA: the box said "Can be merged" with Merge as the primary
+    // action while the list row said "Changes requested").
+    state = <><StatusDot tone="danger"/> Changes requested by {verdict.by.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<UserName id={id}/></Fragment>)}{behind}</>;
+  } else if (checks === 'pending') state = <><StatusDot tone="warning"/> Checks are not done yet{behind}</>;
   else if (checks === 'failure') state = <><StatusDot tone="danger"/> Some checks failed{behind}</>;
   else state = <><StatusDot tone="success"/> {checks === 'success' ? 'Checks passed · can be merged' : 'Can be merged'}{behind}</>;
   return (
@@ -692,17 +699,22 @@ export const MergeBox = observer(function MergeBox({issue}: {issue: Entity<'Issu
           <Menu>
             <MenuTrigger asChild>
               {/* With checks running or failing, merging now is not the default (Merge when checks succeed is). */}
-              <Button variant={checks === 'failure' || checks === 'pending' ? 'secondary' : 'primary'} icon={GitMerge} disabled={!isOnline || busy || conflict}
+              <Button variant={checks === 'failure' || checks === 'pending' || verdict.verdict === 'changes' ? 'secondary' : 'primary'} icon={GitMerge} disabled={!isOnline || busy || conflict}
                 tooltip={offlineWhy('Merging') ?? conflictWhy ?? (checks === 'pending' ? 'Merge now, before the checks finish' : undefined)}>
                 {checks === 'pending' ? 'Merge now…' : 'Merge…'}<Icon icon={ChevronDown} size="sm"/>
               </Button>
             </MenuTrigger>
             <MenuContent>
-              {STYLES.map(([s, label]) => (
-                <MenuItem key={s} onSelect={() => {
-                  setStyle(s);
-                }}>{label}…</MenuItem>
-              ))}
+              {STYLES.map(([s, label]) => {
+                // Fast-forward needs the branch to contain the base: behind it, it cannot apply (offered, it failed
+                // with a 500); said here instead.
+                const why = s === 'fast-forward-only' && pr.commits_behind > 0 ? `${String(pr.commits_behind)} behind ${pr.base_branch}: update the branch first` : undefined;
+                return (
+                  <MenuItem key={s} disabled={why !== undefined} hint={why} onSelect={() => {
+                    setStyle(s);
+                  }}>{label}…</MenuItem>
+                );
+              })}
             </MenuContent>
           </Menu>
           {auto ?
@@ -727,7 +739,9 @@ export const MergeBox = observer(function MergeBox({issue}: {issue: Entity<'Issu
           setStyle(undefined);
         }} onMerge={(body) => {
           setStyle(undefined);
-          run({done: `Merged into ${pr.base_branch}`, failed: 'Merging failed'}, {method: 'POST', api: 'v1', path: `${path}/merge`, body: {Do: style, ...body, ...seen}, timeout: 60_000});
+          run({done: `Merged into ${pr.base_branch}`, failed: 'Merging failed',
+            ...style === 'fast-forward-only' ? {refusal: `It cannot be fast-forwarded: ${pr.base_branch} has commits this branch does not have. Update the branch, or choose another merge style.`} : {}},
+          {method: 'POST', api: 'v1', path: `${path}/merge`, body: {Do: style, ...body, ...seen}, timeout: 60_000});
         }}/>
       )}
     </Card></div>

@@ -14,7 +14,7 @@
 //
 // Paths here are site paths (without the instance's sub-path).
 
-import {END, parseCodePath} from '../code/refs.ts';
+import {abbreviatedSha, END, parseCodePath} from '../code/refs.ts';
 import {isOwnerName, isSpaRoute, NAME} from '../sw/routes.ts';
 
 export {isOwnerName};
@@ -66,7 +66,8 @@ export function nextPathOf(path: string): string | undefined {
     return undefined;
   }
   const code = [c, ...rest].join('/');
-  return parseCodePath(code) ? codePath(a, b, code) : undefined;
+  // An abbreviated commit SHA too: the code view resolves it to the full one's address.
+  return parseCodePath(code) || abbreviatedSha(code) ? codePath(a, b, code) : undefined;
 }
 
 /**
@@ -92,6 +93,8 @@ export function appPageOf(classic: string): string {
 function nearestAppPage(path: string): string | undefined {
   if (/%(?:2e|2f|5c)/i.test(path)) return undefined;
   const [a = '', b = '', c] = segments(path);
+  // An organization's or a user's projects (/{owner}/-/projects): the boards (QA: the pill went Home).
+  if (isOwnerName(a) && b === '-' && c === 'projects') return '/-/next/boards';
   if (!isOwnerName(a) || !NAME.test(b) || b === '-') return undefined;
   if (c === 'releases' || c === 'tags') return codePath(a, b, c);
   if (c === 'projects') return '/-/next/boards';

@@ -94,6 +94,12 @@ function useHighlights(repoId: number, base: string, head: string, count: number
   return {hl, want};
 }
 
+/**
+ * The gutter's last slot: the line's +/− mark, under the "+" comment button on hover (as wide as it: the button never
+ * covers the line numbers; QA: "14" read "1[+]"). --thread-indent counts it.
+ */
+const MARK = 'inline-block w-control-sm shrink-0 text-center text-fg-subtle select-none';
+
 /** Unchanged lines one "expand" reveals above a hunk. */
 const EXPAND_STEP = 40;
 
@@ -218,14 +224,32 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
     setCursor(from);
     v.scrollToIndex(from, {align: 'auto'});
   };
+  // The line keys also from the page (the focus on <body>, or on the tab that opened Files: moved to the diff below), as
+  // the help lists them (QA: ↓ did nothing until an extra Enter had focused the diff).
+  const comment = () => {
+    const r = rows[cursor];
+    if (r?.t === 'line') extras?.onComment?.(r.f, r.l);
+  };
+  useShortcut('diff.lineDown', () => {
+    move(1);
+    listRef.current?.focus({preventScroll: true});
+  });
+  useShortcut('diff.lineUp', () => {
+    move(-1);
+    listRef.current?.focus({preventScroll: true});
+  });
+  useShortcut('diff.lineComment', comment, extras?.onComment !== undefined, () => rows[cursor]?.t === 'line');
+  // Opened by its tab (a click: the focus is on the tab): the diff takes the keys, as a page reached from the sidebar.
+  useEffect(() => {
+    const a = document.activeElement;
+    if (a instanceof HTMLAnchorElement && a.closest('nav') && a.getAttribute('aria-current') === 'page') listRef.current?.focus({preventScroll: true});
+  }, []);
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.target !== e.currentTarget) return; // a composer inside a thread keeps its keys
     if (e.key === 'ArrowDown') move(1);
     else if (e.key === 'ArrowUp') move(-1);
-    else if (e.key === 'Enter' && cursor >= 0 && extras?.onComment) {
-      const r = rows[cursor];
-      if (r?.t === 'line') extras.onComment(r.f, r.l);
-    } else return;
+    else if (e.key === 'Enter' && cursor >= 0 && extras?.onComment) comment();
+    else return;
     e.preventDefault();
   };
   const lastFileStart = v.measurementsCache[fileRow[files.length - 1] ?? 0]?.start ?? 0;
@@ -234,29 +258,34 @@ export const DiffView = observer(function DiffView({repoId, base, head, files, s
   const floating = topRow !== fileRow[current] && files[current];
   const active = rows[cursor];
   return (
-    <div ref={place} className="relative min-w-code font-mono" style={{'--code-chars': chars} as CSSProperties}>
-      {/* The file in view, over the rows (it takes no space), pinned to the view's left edge. */}
+    <div ref={place} className="relative font-mono">
+      {/* The file in view, over the rows (it takes no space), outside the sideways scroller: it stays put both ways. */}
       {floating && (
         <div className={cx('sticky z-sticky h-0', underBar ? 'top-control' : 'top-0')}>
-          <div className="sticky left-0 w-view font-sans"><FileHeader file={floating} f={current} extras={extras} floating/></div>
+          <div className="w-view font-sans"><FileHeader file={floating} f={current} extras={extras} floating/></div>
         </div>
       )}
-      <div ref={listRef} role="list" aria-label="Changes" tabIndex={0} onKeyDown={onKeyDown}
-        aria-activedescendant={active?.t === 'line' ? `${listId}-${String(cursor)}` : undefined}
-        aria-keyshortcuts={extras?.onComment ? 'ArrowUp ArrowDown Enter' : 'ArrowUp ArrowDown'}
-        className="relative focus-visible:outline-offset-0" style={{height: v.getTotalSize()}}>
-        {items.map((it) => {
-          const row = rows[it.index];
-          if (!row) return null;
-          const measured = row.t === 'thread' || row.t === 'notes';
-          return (
-            <div key={it.key} role="listitem" data-index={it.index} ref={measured ? v.measureElement : undefined}
-              className="absolute inset-x-0 top-0" style={{transform: `translateY(${String(it.start - margin)}px)`}}>
-              <RowView row={row} id={`${listId}-${String(it.index)}`} active={it.index === cursor} file={files[row.f]} hl={row.t === 'extra' ? highlit.get(row.f) : hl[row.f]}
-                extras={extras} onExpand={failed.has(row.f) ? undefined : expand}/>
-            </div>
-          );
-        })}
+      {/* Long lines scroll sideways in the diff's own pane, not the page (QA: a commit's page scrolled 3417 px wide). */}
+      <div className="overflow-x-auto overflow-y-hidden">
+        <div className="relative min-w-code" style={{'--code-chars': chars} as CSSProperties}>
+          <div ref={listRef} role="list" aria-label="Changes" tabIndex={0} onKeyDown={onKeyDown}
+            aria-activedescendant={active?.t === 'line' ? `${listId}-${String(cursor)}` : undefined}
+            aria-keyshortcuts={extras?.onComment ? 'ArrowUp ArrowDown Enter' : 'ArrowUp ArrowDown'}
+            className="relative focus-visible:outline-offset-0" style={{height: v.getTotalSize()}}>
+            {items.map((it) => {
+              const row = rows[it.index];
+              if (!row) return null;
+              const measured = row.t === 'thread' || row.t === 'notes';
+              return (
+                <div key={it.key} role="listitem" data-index={it.index} ref={measured ? v.measureElement : undefined}
+                  className="absolute inset-x-0 top-0" style={{transform: `translateY(${String(it.start - margin)}px)`}}>
+                  <RowView row={row} id={`${listId}-${String(it.index)}`} active={it.index === cursor} file={files[row.f]} hl={row.t === 'extra' ? highlit.get(row.f) : hl[row.f]}
+                    extras={extras} onExpand={failed.has(row.f) ? undefined : expand}/>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
       {/* Room after the last file, so that it can come to the top (`]`, the file in view): only what it lacks of a
           view's height (a short last file), never a blank view under it. */}
@@ -297,7 +326,7 @@ const RowView = memo(function RowView({row, id, active, file, hl, extras, onExpa
       // Hidden unchanged lines above it (not for a deleted file: there is no new file to read them from).
       const expandable = row.hidden > 0 && onExpand && file.status !== 'deleted' && !file.binary;
       return (
-        <CodeLine tone="hunk" gutter={<><LineNo n={0}/><LineNo n={0}/><span className="inline-block w-3"/></>}
+        <CodeLine tone="hunk" gutter={<><LineNo n={0}/><LineNo n={0}/><span className={MARK}/></>}
           trailing={expandable && (
             // Opaque (the row's own background): pinned to the right on a narrow view, it covers the header's text.
             <span className="sticky right-0 flex items-center gap-1 bg-inherit pr-2 pl-2 font-sans">
@@ -316,7 +345,7 @@ const RowView = memo(function RowView({row, id, active, file, hl, extras, onExpa
     case 'extra':
       // `hl` is the head file's highlighting here (its line n - 1).
       return (
-        <CodeLine gutter={<><LineNo n={row.o}/><LineNo n={row.n}/><span className="inline-block w-3"/></>}><CodeTokens text={row.text} hl={hl} line={row.n - 1}/></CodeLine>
+        <CodeLine gutter={<><LineNo n={row.o}/><LineNo n={row.n}/><span className={MARK}/></>}><CodeTokens text={row.text} hl={hl} line={row.n - 1}/></CodeLine>
       );
     case 'line': {
       const l = file.lines[row.l];
@@ -324,7 +353,7 @@ const RowView = memo(function RowView({row, id, active, file, hl, extras, onExpa
       const comment = extras?.onComment;
       return (
         <CodeLine id={id} active={active} tone={l.k === ADD ? 'add' : l.k === DEL ? 'del' : 'none'}
-          gutter={<><LineNo n={l.o}/><LineNo n={l.n}/><span className="inline-block w-3 text-fg-subtle select-none">{l.k === ADD ? '+' : l.k === DEL ? '−' : ' '}</span></>}
+          gutter={<><LineNo n={l.o}/><LineNo n={l.n}/><span className={MARK}>{l.k === ADD ? '+' : l.k === DEL ? '−' : ' '}</span></>}
           action={comment && (
             <LineAction label={`Comment on line ${String(l.k === DEL ? l.o : l.n)}`} onClick={() => {
               comment(row.f, row.l);
