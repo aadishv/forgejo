@@ -21,7 +21,21 @@ import {
   AnsiText, BlameCell, CodeFileHeader, CodeLine, CodeTokens, DiffStat, LineNo, StepHeader, StatusDot, TabLink, TabNav,
   ConfirmDialog, Field, FormSection, SectionNav, SectionNavHeading, SectionNavLink, Select, SettingRow, Switch,
   NavGroup, NavHeading, NavItem, Popover, PopoverContent, PopoverTrigger, ProseSource, ResizeHandle, SectionHeading, Shortcut, Skeleton, Status, TextArea, TooltipProvider,
+  ColorPicker, Field, LabelPill, ProgressBar,
 } from '../../ui/index.ts';
+import {LABEL_PRESETS} from '../../features/meta/labels.ts';
+
+/** A colour field with its form field's frame (a label's colour). */
+function GalleryColor() {
+  const [color, setColor] = useState(LABEL_PRESETS[2] ?? '');
+  return (
+    <div className="w-80">
+      <Field label="Colour" htmlFor="gallery-color" error={/^#[\da-f]{6}$/i.test(color) ? undefined : 'A colour as #rrggbb.'}>
+        <ColorPicker id="gallery-color" label="Colour" value={color} presets={LABEL_PRESETS} onChange={setColor}/>
+      </Field>
+    </div>
+  );
+}
 
 const swatches = [
   ['canvas', 'bg-canvas'], ['surface', 'bg-surface'], ['raised', 'bg-raised'], ['hover', 'bg-hover'],
@@ -132,6 +146,14 @@ export default function Gallery() {
           <LabelDot color="var(--color-done)"/>
           <LabelIcon icon={CircleDashed} color="var(--color-warning)"/>
           <Hint label="Priority: High"><LabelIcon icon={SignalHigh} color="var(--color-danger)"/></Hint>
+        </Section>
+
+        <Section title="Label pills, progress, colour">
+          {LABEL_PRESETS.map((c, i) => <LabelPill key={c} name={i % 3 === 0 ? `kind/label ${String(i)}` : `label ${String(i)}`} scope={i % 3 === 0 ? 'kind' : undefined} color={c}/>)}
+          <LabelPill name="not a colour" color="var(--color-accent)"/>
+          <div className="w-64"><ProgressBar value={3} max={8} label="3 of 8 closed"/></div>
+          <div className="w-64"><ProgressBar value={0} max={0} label="Nothing yet"/></div>
+          <GalleryColor/>
         </Section>
 
         <Section title="Issue list rows, properties, prose, notices">

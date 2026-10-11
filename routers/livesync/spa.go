@@ -70,6 +70,11 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "settings", "branches"},
 	{"{owner}", "{repo}", "settings", "hooks"},
 	{"{owner}", "{repo}", "settings", "keys"},
+	{"{owner}", "{repo}", "labels"},     // the repository's labels
+	{"{owner}", "{repo}", "milestones"}, // its milestones (open, closed)
+	{"{owner}", "{repo}", "milestones", "new"},
+	{"{owner}", "{repo}", "milestone", "{index}"}, // a milestone and its issues
+	{"{owner}", "{repo}", "milestone", "{index}", "edit"},
 	{"{owner}", "{repo}", "{code}"},               // a code address (codeAddress); the app opens its code view for it
 	{"{owner}", "{repo}", "activity"},             // the activity (Pulse) of the last week
 	{"{owner}", "{repo}", "activity", "{period}"}, // … of another period (activityPeriods)

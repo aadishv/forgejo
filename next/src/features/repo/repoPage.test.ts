@@ -33,12 +33,14 @@ describe('tabOfPath', () => {
     expect(tabOfPath('/acme/website/settings')).toBe('settings');
     expect(tabOfPath('/acme/website/settings/hooks')).toBe('settings');
     for (const path of ['/acme/website/activity', '/acme/website/activity/monthly', '/acme/website/activity/contributors']) expect(tabOfPath(path), path).toBe('activity');
+    // Labels and milestones belong to Issues (GitHub's).
+    for (const p of ['/acme/website/labels', '/acme/website/milestones', '/acme/website/milestone/3', '/acme/website/milestones/new']) expect(tabOfPath(p), p).toBe('issues');
   });
 
   test('anything else is no tab', () => {
     expect(tabOfPath('/acme')).toBeUndefined();
     expect(tabOfPath('/')).toBeUndefined();
-    expect(tabOfPath('/acme/website/milestones')).toBeUndefined();
+    expect(tabOfPath('/acme/website/forks')).toBeUndefined();
     expect(tabOfPath('/-/next/code/acme/website/nonsense/-')).toBeUndefined();
     expect(tabOfPath('/-/next/acme/website/settings')).toBeUndefined();
     expect(tabOfPath('/-/next/projects/3')).toBeUndefined();
