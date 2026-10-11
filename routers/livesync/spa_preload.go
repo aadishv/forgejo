@@ -43,6 +43,13 @@ func routeModules(p string) []string {
 		}
 		return nil
 	}
+	if segs[0] == "user" {
+		// The viewer's settings pages (spaRoutes); every other /user/… page is classic.
+		if spaRoute(p) {
+			return []string{"src/features/usersettings/UserSettings.tsx"}
+		}
+		return nil
+	}
 	if len(segs) >= 3 && segs[2] == "wiki" {
 		return []string{"src/features/wiki/WikiPage.tsx"}
 	}

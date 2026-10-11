@@ -338,6 +338,61 @@ const repoRecentCommitsRoute = createRoute({
   component: activityView('ActivityRecentCommits'),
 });
 
+// The viewer's settings (the classic /user/settings pages, laid out like GitHub's: a side list of its pages beside
+// the page): the profile, the account's email addresses, the appearance, SSH and GPG keys; the side list links the
+// other pages to the classic UI. "user" is a name Forgejo reserves, so these never read as an owner and a
+// repository. The loader starts fetching what the page shows, so a hovered link has it in memory when clicked.
+type SettingsKind = 'settings' | 'emails' | 'keys' | 'gpg' | 'options';
+
+function settingsLoader(app: App, kinds: SettingsKind[]): void {
+  void import('../features/usersettings/data.ts').then((m) => {
+    m.settingsSource(app)?.prefetch(...kinds);
+  }, () => undefined);
+}
+
+const settingsView = (name: 'SettingsProfile' | 'SettingsAccount' | 'SettingsAppearance' | 'SettingsKeys') =>
+  lazyView(() => import('../features/usersettings/UserSettings.tsx'), name);
+
+const settingsProfileRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsProfile'),
+});
+
+const settingsAccountRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/account',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['emails']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAccount'),
+});
+
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/appearance',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings', 'options']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAppearance'),
+});
+
+const settingsKeysRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/keys',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['keys', 'gpg']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsKeys'),
+});
+
 // A repository's labels and milestones (features/meta): computed from the pool, written online.
 const repoLabelsRoute = createRoute({
   getParentRoute: () => shellRoute,
@@ -492,6 +547,7 @@ const routeTree = rootRoute.addChildren([
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,
+    settingsProfileRoute, settingsAccountRoute, settingsAppearanceRoute, settingsKeysRoute,
     repoLabelsRoute, repoMilestonesRoute, repoMilestoneNewRoute, repoMilestoneRoute, repoMilestoneEditRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),

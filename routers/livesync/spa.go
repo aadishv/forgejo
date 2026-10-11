@@ -87,6 +87,13 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "wiki", "-", "pages"},
 	{"{owner}", "{repo}", "wiki", "-", "new"},
 	{"{owner}", "{repo}", "wiki", "{page}", "-", "edit"},
+	// The viewer's settings: the profile, account (email addresses),
+	// appearance and SSH / GPG keys pages; the other pages stay classic.
+	// "user" is a reserved name ({owner} never matches it).
+	{"user", "settings"},
+	{"user", "settings", "account"},
+	{"user", "settings", "appearance"},
+	{"user", "settings", "keys"},
 }
 
 // activityPeriods are the periods of the classic activity page
@@ -250,6 +257,28 @@ next:
 // routes, which would otherwise serve the UI again. The opt-in stays.
 func classicRequested(req *http.Request) bool {
 	return req.URL.Query().Get(protocol.NextUICookie) == "classic"
+}
+
+// classicReturn reports whether req comes back to the classic page it was
+// sent from: the classic page of a canonical route (?ui=classic) whose form
+// posted to its own address and was redirected there (the classic settings
+// pages: a password changed on /user/settings/account?ui=classic comes back
+// to /user/settings/account, where the classic page shows that it was
+// done). Without it the UI would answer, and the classic page's message
+// would be lost.
+func classicReturn(req *http.Request) bool {
+	ref := req.Header.Get("Referer")
+	if ref == "" {
+		return false
+	}
+	u, err := url.Parse(ref)
+	if err != nil || u.Query().Get(protocol.NextUICookie) != "classic" {
+		return false
+	}
+	if u.Host != "" && u.Host != req.Host {
+		return false
+	}
+	return normalizeSlashes(u.Path) == normalizeSlashes(req.URL.Path)
 }
 
 // profileTab reports whether req asks for a tab of an owner's classic
@@ -840,7 +869,7 @@ func (s *spa) serveIndex(w http.ResponseWriter, req *http.Request, canonical boo
 // canonical route the UI supports (and there is a build): it gets the UI's
 // document instead of the classic page.
 func (s *spa) document(req *http.Request) bool {
-	if !optedIn(req) || !s.available() || classicRequested(req) {
+	if !optedIn(req) || !s.available() || classicRequested(req) || classicReturn(req) {
 		return false
 	}
 	p := normalizeSlashes(req.URL.Path)

@@ -55,6 +55,8 @@ package protocol
 //	GET    /-/sync/api/repos/{id}/diff/{base}/{head}        → 200 unified diff base..head (immutable)
 //	GET    /-/sync/api/repos/{id}/activity/{commit}         → 200 APICommitActivity     (immutable)
 //	GET    /-/sync/api/repos/{id}/contributors/{commit}     → 200 APIContributors       (immutable); 202 + Retry-After while it is computed
+//	GET    /-/sync/api/user/options                         → 200 APIUserOptions (user.go)
+//	PUT    /-/sync/api/user/emails/primary                  APIPrimaryEmail → 204; 404 not the viewer's address, 422 not verified (write:user)
 //
 // Immutable responses (HeaderImmutable): "Cache-Control: private,
 // max-age=31536000, immutable", "Vary: Authorization", a strong ETag (tree:

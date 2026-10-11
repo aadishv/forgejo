@@ -8,7 +8,7 @@
 // classic pages for what the app does not do (the profile, teams, and — for
 // those allowed — settings). Its own chunk.
 
-import {Link, useParams} from '@tanstack/react-router';
+import {Link, useNavigate, useParams} from '@tanstack/react-router';
 import {BookMarked, BookPlus, Building2, CloudOff, KanbanSquare, Lock, Settings, User as UserIcon, Users} from 'lucide-react';
 import {ClassicMenuItem} from '../../app/ClassicMenuItem.tsx';
 import {observer} from 'mobx-react-lite';
@@ -22,7 +22,7 @@ import {ShellNotFound} from '../../app/RouteStatus.tsx';
 import {PageBody, PageColumn} from '../../app/shell/Frame.tsx';
 import {PageHeader} from '../../app/shell/PageHeader.tsx';
 import {useApp, useSession} from '../../app/store.ts';
-import {Avatar, Badge, Button, EmptyState, Hint, Icon, ListRow, MenuLabel, MoreMenu, Panel, SkeletonText} from '../../ui/index.ts';
+import {Avatar, Badge, Button, EmptyState, Hint, Icon, ListRow, MenuItem, MenuLabel, MenuSeparator, MoreMenu, Panel, SkeletonText} from '../../ui/index.ts';
 import {ago, fullDate} from '../issues/format.ts';
 
 interface OwnerInfo {
@@ -120,15 +120,20 @@ const OwnerBody = observer(function OwnerBody({info, isOrg, me, classic}: {info:
   // Settings and a new repository only for those allowed (an organization's owners and admins; the user themself).
   const settings = isOrg ? p !== undefined && (p.is_owner || p.is_admin) : me;
   const create = isOrg ? p !== undefined && (p.can_create_repository || p.is_owner) : me;
+  const navigate = useNavigate();
   return (
     <>
       {/* What only the classic UI has is in More, as on a repository's pages (buttons ran off a phone's edge). */}
       <PageHeader icon={isOrg ? Building2 : UserIcon} title={info.login}>
         <MoreMenu label={isOrg ? 'More of this organization' : 'More of this user'}>
+          {settings && !isOrg && <>
+            <MenuItem icon={Settings} onSelect={() => void navigate({to: '/user/settings'})}>Settings</MenuItem>
+            <MenuSeparator/>
+          </>}
           <MenuLabel>In the classic UI</MenuLabel>
           <ClassicMenuItem to={classic} icon={isOrg ? Building2 : UserIcon}>{isOrg ? 'Organization page' : 'Profile'}</ClassicMenuItem>
           {isOrg && <ClassicMenuItem to={`/org/${encodeURIComponent(info.login)}/teams`} icon={Users}>Teams</ClassicMenuItem>}
-          {settings && <ClassicMenuItem to={isOrg ? `/org/${encodeURIComponent(info.login)}/settings` : '/user/settings'} icon={Settings}>Settings</ClassicMenuItem>}
+          {settings && isOrg && <ClassicMenuItem to={`/org/${encodeURIComponent(info.login)}/settings`} icon={Settings}>Settings</ClassicMenuItem>}
         </MoreMenu>
       </PageHeader>
       <PageBody>
