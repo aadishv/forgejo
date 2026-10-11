@@ -49,13 +49,16 @@ export function isOwnerName(s: string): boolean {
   return NAME.test(s) && !RESERVED.has(s.toLowerCase()) && !RESERVED_SUFFIX.test(s);
 }
 
+/** A repository's settings sections the app renders (`/{owner}/{repo}/settings/{section}`; spa.go spaRoutes). */
+export const SETTINGS_SECTIONS: readonly string[] = ['collaboration', 'branches', 'hooks', 'keys'];
+
 /** The address segment of an issue created offline (spa.go reTempIssue). */
 const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
 
 /**
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
  * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
- * `/{owner}/{repo}/pulls[/{n}]`. `?ui=classic` asks for the classic page, and so does an owner's profile tab
+ * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/settings[/{section}]`. `?ui=classic` asks for the classic page, and so does an owner's profile tab
  * (`/{owner}?tab=activity`; the app shows the repositories). Keep in step with routers/livesync/spa.go.
  */
 export function isSpaRoute(path: string, search = ''): boolean {
@@ -73,6 +76,7 @@ export function isSpaRoute(path: string, search = ''): boolean {
   if (kind === undefined) return true;
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.
   if (codeAddress(segs.slice(2))) return true;
+  if (kind === 'settings') return segs.length === 3 || (segs.length === 4 && SETTINGS_SECTIONS.includes(n ?? ''));
   if (segs.length > 4) return false;
   if (kind !== 'issues' && kind !== 'pulls') return false;
   // An issue created offline is at "new-<uuid>" until Forgejo numbers it (features/issue/paths.ts TEMP_PATH).

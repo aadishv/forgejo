@@ -23,6 +23,8 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/projects/4":                 "src/features/board/BoardView.tsx",
 		"/-/next/code/acme/atlas/src/main/-": "src/features/code/CodePage.tsx",
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
+		"/acme/atlas/settings":               "src/features/settings/Settings.tsx",
+		"/acme/atlas/settings/hooks":         "src/features/settings/Settings.tsx",
 	} {
 		got := routeModules(p)
 		if assert.NotEmpty(t, got, p) {

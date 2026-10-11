@@ -55,12 +55,18 @@ func routeModules(p string) []string {
 	case 2:
 		return []string{"src/features/repo/RepoHome.tsx"}
 	case 3:
-		if segs[2] == "issues" || segs[2] == "pulls" {
+		switch segs[2] {
+		case "issues", "pulls":
 			return []string{"src/features/repo/RepoViews.tsx"}
+		case "settings":
+			return []string{"src/features/settings/Settings.tsx"}
 		}
 	case 4:
-		if segs[2] == "issues" || segs[2] == "pulls" {
+		switch segs[2] {
+		case "issues", "pulls":
 			return []string{"src/features/issue/IssueView.tsx"}
+		case "settings":
+			return []string{"src/features/settings/Settings.tsx"}
 		}
 	}
 	return nil

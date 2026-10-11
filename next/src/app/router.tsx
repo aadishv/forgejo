@@ -192,6 +192,26 @@ const repoPullRoute = createRoute({
   component: lazyView(() => import('../features/issue/IssueView.tsx'), 'IssueView'),
 });
 
+// A repository's settings (administrators): the classic UI's addresses, one route per section the app has (the
+// others stay classic: the settings' navigation links them).
+function settingsRoute<P extends `/$owner/$repo/settings${string}`>(path: P, view: 'SettingsGeneral' | 'SettingsCollaboration' | 'SettingsBranches' | 'SettingsHooks' | 'SettingsKeys') {
+  return createRoute({
+    getParentRoute: () => shellRoute,
+    path,
+    loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params as {owner: string; repo: string}, location),
+    staticData: {skeleton: 'detail'},
+    component: lazyView(() => import('../features/settings/Settings.tsx'), view),
+  });
+}
+
+const settingsRoutes = [
+  settingsRoute('/$owner/$repo/settings', 'SettingsGeneral'),
+  settingsRoute('/$owner/$repo/settings/collaboration', 'SettingsCollaboration'),
+  settingsRoute('/$owner/$repo/settings/branches', 'SettingsBranches'),
+  settingsRoute('/$owner/$repo/settings/hooks', 'SettingsHooks'),
+  settingsRoute('/$owner/$repo/settings/keys', 'SettingsKeys'),
+] as const;
+
 // The UI's own pages inside the shell (no canonical Forgejo URL serves them yet: B8's spaRoutes would need
 // `/{owner}/{repo}/projects/{id}` etc., a backend change; below the base they reload into the app anyway).
 const boardsRoute = createRoute({
@@ -299,7 +319,7 @@ const routeTree = rootRoute.addChildren([
   callbackRoute,
   shellRoute.addChildren([
     baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
-    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
+    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, ...settingsRoutes, boardsRoute, boardRoute, codeRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
   ...devRoutes,

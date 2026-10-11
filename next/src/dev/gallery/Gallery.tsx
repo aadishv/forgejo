@@ -18,6 +18,7 @@ import {
   ContextMenuTrigger, Dialog, DialogClose, DialogTrigger, EmptyState, Icon, IconButton, Input, LabelChip, ListRow, Menu,
   MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger,
   AnsiText, BlameCell, CodeFileHeader, CodeLine, CodeTokens, DiffStat, LineNo, StepHeader, StatusDot, TabLink, TabNav,
+  ConfirmDialog, Field, FormSection, SectionNav, SectionNavHeading, SectionNavLink, Select, SettingRow, Switch,
   NavGroup, NavHeading, NavItem, Popover, PopoverContent, PopoverTrigger, ProseSource, ResizeHandle, SectionHeading, Shortcut, Skeleton, Status, TextArea, TooltipProvider,
 } from '../../ui/index.ts';
 
@@ -56,6 +57,9 @@ export default function Gallery() {
   const [showClosed, setShowClosed] = useState(true);
   const [priority, setPriority] = useState('high');
   const [navOpen, setNavOpen] = useState(true);
+  const [feature, setFeature] = useState(true);
+  const [role, setRole] = useState<'read' | 'write' | 'admin'>('write');
+  const [confirm, setConfirm] = useState(false);
   const pick = (t: ThemePreference) => {
     setThemePreference(t);
     setTheme(t);
@@ -326,6 +330,44 @@ export default function Gallery() {
             <CodeLine gutter={<><BlameCell first summary="Fix the parser" meta="3 d"/><LineNo n={3}/></>}>blamed line</CodeLine>
             <StepHeader expanded onToggle={() => undefined} mark={<StatusDot tone="success"/>} meta="1 m 5 s">Run tests</StepHeader>
             <CodeLine gutter={<LineNo n={4}/>}><AnsiText spans={[{text: 'PASS ', color: 2, bold: true}, {text: 'error ', color: 1, bold: false}, {text: 'plain', color: 0, bold: false}]}/></CodeLine>
+          </div>
+        </Section>
+
+        <Section title="Settings: sections, fields, switches, select, confirmation">
+          <div className="flex w-full gap-6">
+            <SectionNav label="Gallery settings">
+              <SectionNavLink label="General" icon={Pencil}><a href="#settings" aria-current="page"/></SectionNavLink>
+              <SectionNavLink label="Webhooks" icon={Tag}><a href="#settings"/></SectionNavLink>
+              <SectionNavHeading>In the classic UI</SectionNavHeading>
+              <SectionNavLink label="Units" icon={Archive} hint="classic"><a href="#settings"/></SectionNavLink>
+            </SectionNav>
+            <div id="settings" className="flex max-w-lg min-w-0 flex-1 flex-col gap-6">
+              <FormSection id="gallery-general" title="General" description="A titled part of a settings page.">
+                <Field id="gallery-name" label="Repository name" description="Letters, digits, “-”, “_” and “.”.">
+                  <Input id="gallery-name" className="w-full" defaultValue="atlas"/>
+                </Field>
+                <Field id="gallery-site" label="Website" optional error="An address starting with http:// or https://.">
+                  <Input id="gallery-site" className="w-full" invalid defaultValue="atlas.example"/>
+                </Field>
+                <Field id="gallery-filter" label="Branch filter" optional>
+                  <Input id="gallery-filter" className="w-full" mono defaultValue="release/*"/>
+                </Field>
+                <SettingRow id="gallery-wiki" title="Wiki" description="Pages of documentation next to the code." control={<Switch id="gallery-wiki" checked={feature} onCheckedChange={setFeature}/>}/>
+                <SettingRow id="gallery-off" title="Packages" description="Disabled." control={<Switch id="gallery-off" checked={false} disabled onCheckedChange={() => undefined}/>}/>
+                <SettingRow id="gallery-role" title="Role" control={
+                  <Select id="gallery-role" size="sm" value={role} onValueChange={setRole} options={[{value: 'read', label: 'Read'}, {value: 'write', label: 'Write'}, {value: 'admin', label: 'Admin'}]}/>
+                }/>
+              </FormSection>
+              <FormSection id="gallery-danger" title="Danger zone" tone="danger">
+                <SettingRow id="gallery-delete" title="Delete this repository" description="This cannot be undone." control={<Button variant="danger" onClick={() => {
+                  setConfirm(true);
+                }}>Delete</Button>}/>
+              </FormSection>
+              <ConfirmDialog open={confirm} onOpenChange={setConfirm} title="Delete acme/atlas?" description="Its code, issues and pull requests are deleted for good."
+                confirmLabel="Delete this repository" confirmText="acme/atlas" error="Forgejo could not be reached." onConfirm={() => {
+                  setConfirm(false);
+                }}/>
+            </div>
           </div>
         </Section>
 

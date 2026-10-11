@@ -23,7 +23,11 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/compare')).toBe('/-/next/code/acme/atlas/compare/-');
   expect(nextPathOf('/acme/atlas/compare/main..feature')).toBeUndefined();
   // Forgejo's own pages and what the app does not render stay classic.
-  for (const p of ['/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
+  // Settings: the sections the app has.
+  expect(nextPathOf('/acme/atlas/settings')).toBe('/acme/atlas/settings');
+  expect(nextPathOf('/acme/atlas/settings/hooks')).toBe('/acme/atlas/settings/hooks');
+  expect(nextPathOf('/acme/atlas/settings/collaboration')).toBe('/acme/atlas/settings/collaboration');
+  for (const p of ['/explore', '/user/settings', '/acme/atlas/settings/units', '/acme/atlas/settings/hooks/3', '/acme/atlas/settings/hooks/git', '/acme/atlas/wiki', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
   }
 });
@@ -43,13 +47,15 @@ test('the app\'s pages → classic pages', () => {
 
 test('canonical routes and the repository of a route', () => {
   for (const p of ['/', '/issues', '/acme', '/acme/atlas', '/acme/atlas/pulls/3']) expect(isCanonical(p), p).toBe(true);
-  for (const p of ['/explore', '/dev.keys', '/user/login', '/acme/atlas/settings', '/acme/atlas/issues/new']) expect(isCanonical(p), p).toBe(false);
+  for (const p of ['/acme/atlas/settings', '/acme/atlas/settings/branches', '/acme/atlas/settings/keys']) expect(isCanonical(p), p).toBe(true);
+  for (const p of ['/explore', '/dev.keys', '/user/login', '/acme/atlas/settings/units', '/acme/atlas/settings/hooks/git', '/acme/atlas/issues/new']) expect(isCanonical(p), p).toBe(false);
   expect(isCanonical('/acme', '?tab=activity')).toBe(false);
   expect(isCanonical('/acme/atlas', '?ui=classic')).toBe(false);
   expect(repoOfPath('/acme/Atlas/issues/3')).toBe('acme/atlas');
   expect(repoOfPath('/-/next/code/acme/atlas/src/-')).toBe('acme/atlas');
   expect(repoOfPath('/notifications')).toBeUndefined();
   expect(repoOfPath('/user/settings')).toBeUndefined();
+  expect(repoOfPath('/acme/atlas/settings/hooks')).toBe('acme/atlas');
 });
 
 test('missing-content sentences agree with their subject', async () => {
@@ -73,11 +79,15 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
   for (const p of ['/explore/repos', '/user/settings', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
   // A repository's classic-only pages: the nearest page of the app, never Home.
-  for (const p of ['/acme/atlas/settings', '/acme/atlas/milestones', '/acme/atlas/wiki/Home', '/acme/atlas/activity', '/acme/atlas/stars', '/acme/atlas/labels']) {
+  for (const p of ['/acme/atlas/milestones', '/acme/atlas/wiki/Home', '/acme/atlas/activity', '/acme/atlas/stars', '/acme/atlas/labels']) {
     expect(appPageOf(p), p).toBe('/acme/atlas');
   }
   expect(appPageOf('/acme/atlas/releases/tag/v0.2.0')).toBe('/-/next/code/acme/atlas/releases/-');
   expect(appPageOf('/acme/atlas/projects')).toBe('/-/next/boards');
+  // A settings section only the classic UI has: the app's settings.
+  expect(appPageOf('/acme/atlas/settings/units')).toBe('/acme/atlas/settings');
+  expect(appPageOf('/acme/atlas/settings/actions/secrets')).toBe('/acme/atlas/settings');
+  expect(appPageOf('/acme/atlas/settings/keys')).toBe('/acme/atlas/settings/keys');
   expect(appPageOf('/acme/atlas/issues/new')).toBe('/acme/atlas/issues');
 });
 

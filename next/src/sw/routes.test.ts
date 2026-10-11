@@ -5,6 +5,8 @@ import {expect, test} from 'vitest';
 import {buildOf, isSpaRoute, sitePathOf, strategy} from './routes.ts';
 
 test('canonical routes (B8 spaRoutes) and the rest', () => {
+  for (const p of ['/acme/repo/settings', '/acme/repo/settings/collaboration', '/acme/repo/settings/branches', '/acme/repo/settings/hooks', '/acme/repo/settings/keys']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/acme/repo/settings/units', '/acme/repo/settings/hooks/git', '/acme/repo/settings/hooks/3', '/acme/repo/settings/keys/x', '/explore/repo/settings']) expect(isSpaRoute(p), p).toBe(false);
   for (const p of ['/', '/notifications', '/issues', '/pulls/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/acme/repo', '/acme', '/acme/repo/issues/new-0f8fad5b-d9cb-469f-a165-70867728950e']) expect(isSpaRoute(p), p).toBe(true);
   for (const p of ['/explore', '/dev.keys', '/user/login', '/explore/repos', '/api/v1', '/acme/repo/issues/0', '/acme/repo/issues/x', '/acme/repo/wiki', '/api/v1/issues/1', '/.x/repo/issues', '/acme/repo/issues/1/files', '/user/login', '/acme/repo/pulls/new-0f8fad5b-d9cb-469f-a165-70867728950e', '/acme/repo/issues/new-x']) {
     expect(isSpaRoute(p), p).toBe(false);

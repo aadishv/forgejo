@@ -28,6 +28,8 @@ describe('tabOfPath', () => {
     expect(tabOfPath('/acme/website/pulls')).toBe('pulls');
     expect(tabOfPath('/-/next/code/acme/website/actions/-')).toBe('actions');
     expect(tabOfPath('/-/next/code/acme/website/actions/runs/4/-')).toBe('actions');
+    expect(tabOfPath('/acme/website/settings')).toBe('settings');
+    expect(tabOfPath('/acme/website/settings/hooks')).toBe('settings');
   });
 
   test('anything else is no tab', () => {

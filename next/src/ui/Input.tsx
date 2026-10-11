@@ -12,10 +12,12 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean | undefined;
   /** A decorative icon inside, before the text (search). */
   icon?: LucideIcon | undefined;
+  /** Code-like text (a branch pattern, a path): the monospace face. */
+  mono?: boolean | undefined;
   ref?: Ref<HTMLInputElement>;
 }
 
-export function Input({size = 'md', invalid, icon, className, ...rest}: InputProps) {
+export function Input({size = 'md', invalid, icon, mono, className, ...rest}: InputProps) {
   const input = (
     <input
       aria-invalid={invalid}
@@ -24,7 +26,7 @@ export function Input({size = 'md', invalid, icon, className, ...rest}: InputPro
         controlHeight[size],
         field,
         'px-2',
-        size === 'sm' ? 'text-sm' : 'text-base',
+        mono ? 'font-mono text-code' : size === 'sm' ? 'text-sm' : 'text-base',
         icon ? 'w-full pl-7' : className,
       )}
       {...rest}
