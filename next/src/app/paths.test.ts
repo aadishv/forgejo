@@ -28,6 +28,11 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/compare/feature')).toBe('/-/next/code/acme/atlas/compare/feature/-');
   expect(nextPathOf('/acme/atlas/compare')).toBe('/-/next/code/acme/atlas/compare/-');
   expect(nextPathOf('/acme/atlas/compare/main..feature')).toBeUndefined();
+  // The new repository and organization forms ("repo" and "org" are reserved names: no owner); a migration stays classic.
+  expect(nextPathOf('/repo/create')).toBe('/repo/create');
+  expect(nextPathOf('/org/create')).toBe('/org/create');
+  expect(appPageOf('/repo/create?org=3')).toBe('/repo/create?org=3');
+  expect(appPageOf('/org/create?x=1')).toBe('/org/create');
   // Labels and milestones.
   expect(nextPathOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
   expect(nextPathOf('/acme/atlas/milestones')).toBe('/acme/atlas/milestones');
@@ -36,7 +41,7 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/milestone/7/edit')).toBe('/acme/atlas/milestone/7/edit');
   for (const p of ['/acme/atlas/labels/x', '/acme/atlas/milestone/0', '/acme/atlas/milestone/7/close', '/acme/atlas/milestones/7']) expect(nextPathOf(p), p).toBeUndefined();
   // Forgejo's own pages and what the app does not render stay classic.
-  for (const p of ['/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
+  for (const p of ['/repo/migrate', '/org/acme/teams', '/repo/create/x', '/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
   }
 });

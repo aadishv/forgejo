@@ -52,12 +52,21 @@ test('every canonical route of the app is a server spaRoute', () => {
 test('sample URLs match a page (not the root\'s not-found)', () => {
   const r = router();
   for (const path of ['/', '/notifications', '/issues', '/pulls', '/acme/web.site', '/-/next/acme', '/-/next/acme/web.site', '/-/next/acme/web.site/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/-/next/', '/-/next/callback', '/acme/web.site/wiki', '/acme/web.site/wiki/', '/acme/web.site/wiki/Home', '/acme/web.site/wiki/-/pages', '/acme/web.site/wiki/-/new', '/acme/web.site/wiki/Home/-/edit',
-    '/acme/api/labels', '/acme/api/milestones', '/acme/api/milestones/new', '/acme/api/milestone/4', '/acme/api/milestone/4/edit']) {
+    '/acme/api/labels', '/acme/api/milestones', '/acme/api/milestones/new', '/acme/api/milestone/4', '/acme/api/milestone/4/edit', '/repo/create', '/org/create']) {
     const matches = r.matchRoutes(path, {});
     const leaf = matches.at(-1);
     expect(leaf?.routeId, path).not.toBe('__root__');
     expect((leaf as {globalNotFound?: boolean} | undefined)?.globalNotFound ?? false, path).toBe(false);
   }
+});
+
+test('the new repository and organization forms are their own pages, never an owner\'s repository', () => {
+  const r = router();
+  const leaf = (path: string) => r.matchRoutes(path, {}).at(-1) as {fullPath?: string} | undefined;
+  expect(leaf('/repo/create')?.fullPath).toBe('/repo/create');
+  expect(leaf('/org/create')?.fullPath).toBe('/org/create');
+  // A repository named "create" is still one.
+  expect(leaf('/acme/create')?.fullPath).toBe('/$owner/$repo');
 });
 
 test('wiki addresses: the views by their own routes, page names decoded', () => {

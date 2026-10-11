@@ -59,6 +59,12 @@ func routeModules(p string) []string {
 		}
 		return []string{"src/features/owner/OwnerPage.tsx"}
 	case 2:
+		switch {
+		case segs[0] == "repo" && segs[1] == "create":
+			return []string{"src/features/new/NewRepo.tsx"}
+		case segs[0] == "org" && segs[1] == "create":
+			return []string{"src/features/new/NewOrg.tsx"}
+		}
 		return []string{"src/features/repo/RepoHome.tsx"}
 	case 3:
 		switch segs[2] {
