@@ -180,33 +180,33 @@ function HookDialog({owner, repo, hook, onClose, onSaved}: {owner: string; repo:
         e.preventDefault();
         void save();
       }}>
-        <Field id="hook-url" label="Target URL" error={errors.url} description="Forgejo sends a POST request here for each event.">
+        <Field htmlFor="hook-url" errorId={hintId('hook-url')} label="Target URL" error={errors.url} hint="Forgejo sends a POST request here for each event.">
           <Input id="hook-url" type="url" className="w-full" placeholder="https://" value={form.url} autoFocus invalid={Boolean(errors.url)} aria-describedby={hintId('hook-url')}
             onChange={(e) => {
               set('url', e.target.value);
             }}/>
         </Field>
-        <Field id="hook-content-type" label="Content type" error={errors.contentType}>
+        <Field htmlFor="hook-content-type" errorId={hintId('hook-content-type')} label="Content type" error={errors.contentType}>
           <Select id="hook-content-type" value={form.contentType} aria-describedby={hintId('hook-content-type')}
             options={[{value: 'json', label: 'application/json'}, {value: 'form', label: 'application/x-www-form-urlencoded'}]} onValueChange={(v) => {
               set('contentType', v);
             }}/>
         </Field>
         {creating && (
-          <Field id="hook-secret" label="Secret" optional description="Signs each delivery (the X-Forgejo-Signature header). It cannot be read back or changed here later.">
+          <Field htmlFor="hook-secret" errorId={hintId('hook-secret')} label="Secret" optional hint="Signs each delivery (the X-Forgejo-Signature header). It cannot be read back or changed here later.">
             <Input id="hook-secret" type="password" className="w-full" value={form.secret} autoComplete="new-password" aria-describedby={hintId('hook-secret')}
               onChange={(e) => {
                 set('secret', e.target.value);
               }}/>
           </Field>
         )}
-        <Field id="hook-authorization" label="Authorization header" optional error={errors.authorization} description="Sent as the Authorization header of each delivery (Bearer …).">
+        <Field htmlFor="hook-authorization" errorId={hintId('hook-authorization')} label="Authorization header" optional error={errors.authorization} hint="Sent as the Authorization header of each delivery (Bearer …).">
           <Input id="hook-authorization" className="w-full" mono value={form.authorization} autoComplete="off" spellCheck={false} disabled={!ready}
             invalid={Boolean(errors.authorization)} aria-describedby={hintId('hook-authorization')} onChange={(e) => {
               set('authorization', e.target.value);
             }}/>
         </Field>
-        <Field id="hook-branches" label="Branch filter" optional error={errors.branchFilter} description="A glob pattern of the branches whose events are sent (empty or *: all).">
+        <Field htmlFor="hook-branches" errorId={hintId('hook-branches')} label="Branch filter" optional error={errors.branchFilter} hint="A glob pattern of the branches whose events are sent (empty or *: all).">
           <Input id="hook-branches" className="w-full" mono value={form.branchFilter} placeholder="*" spellCheck={false} invalid={Boolean(errors.branchFilter)}
             aria-describedby={hintId('hook-branches')} onChange={(e) => {
               set('branchFilter', e.target.value);

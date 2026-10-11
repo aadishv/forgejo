@@ -1,43 +1,16 @@
 // Copyright 2026 The Forgejo Authors. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The parts of a settings form (a repository's settings): a labelled field
-// with its hint or its error, a titled section (the danger zone in red), and
-// a row that names a setting on the left and holds its control on the right.
+// The parts of a settings page (a repository's settings), besides the fields
+// (Input.tsx Field): a titled section (the danger zone in red), and a row
+// that names a setting on the left and holds its control on the right.
 
 import type {ReactNode} from 'react';
 import {cx} from './cx.ts';
 
-/** The id of a field's hint or error text (what its control's aria-describedby names). */
+/** The id of a setting's hint or a field's error text (what its control's aria-describedby names). */
 export function hintId(id: string): string {
   return `${id}-hint`;
-}
-
-export interface FieldProps {
-  /** The control's id (the label points at it; the hint or error is `hintId(id)`). */
-  id: string;
-  label: string;
-  /** Shown under the control while there is no error. */
-  description?: ReactNode;
-  /** What is wrong with the value (the server's 422, or a check before sending). */
-  error?: string | undefined;
-  optional?: boolean | undefined;
-  children: ReactNode;
-}
-
-/** A labelled control with its hint, or its error in place of the hint. */
-export function Field({id, label, description, error, optional, children}: FieldProps) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-base font-medium text-fg">
-        {label}{optional && <span className="font-normal text-fg-subtle"> (optional)</span>}
-      </label>
-      {children}
-      {error ?
-        <p id={hintId(id)} className="text-sm text-danger">{error}</p> :
-        description && <p id={hintId(id)} className="text-sm text-fg-muted">{description}</p>}
-    </div>
-  );
 }
 
 export interface FormSectionProps {

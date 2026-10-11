@@ -156,8 +156,8 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
         void save();
       }}>
         {creating && (
-          <Field id="rule-name" label="Branch name or pattern" error={errors.name}
-            description={matches.length ? `Matches ${matches.slice(0, 3).join(', ')}${matches.length > 3 ? ` and ${String(matches.length - 3)} more` : ''}.` : 'A branch name, or a glob pattern such as release/* (no branch matches yet).'}>
+          <Field htmlFor="rule-name" errorId={hintId('rule-name')} label="Branch name or pattern" error={errors.name}
+            hint={matches.length ? `Matches ${matches.slice(0, 3).join(', ')}${matches.length > 3 ? ` and ${String(matches.length - 3)} more` : ''}.` : 'A branch name, or a glob pattern such as release/* (no branch matches yet).'}>
             <Input id="rule-name" className="w-full" mono value={form.name} autoFocus autoComplete="off" spellCheck={false} invalid={Boolean(errors.name)}
               aria-describedby={hintId('rule-name')} onChange={(e) => {
                 set('name', e.target.value);
@@ -170,7 +170,7 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
             set('push', v);
           }}/>
           {form.push === 'listed' && <>
-            <Field id="rule-push-users" label="People who may push" error={errors.pushUsers} description="Logins, separated by commas.">
+            <Field htmlFor="rule-push-users" errorId={hintId('rule-push-users')} label="People who may push" error={errors.pushUsers} hint="Logins, separated by commas.">
               <Input id="rule-push-users" className="w-full" value={form.pushUsers} autoComplete="off" spellCheck={false} invalid={Boolean(errors.pushUsers)}
                 aria-describedby={hintId('rule-push-users')} onChange={(e) => {
                   set('pushUsers', e.target.value);
@@ -181,7 +181,7 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
         </fieldset>
         <fieldset className="flex flex-col gap-2">
           <legend className="pb-1 text-base font-medium text-fg">Before merging</legend>
-          <Field id="rule-approvals" label="Required approvals" error={errors.approvals} description="Approving reviews a pull request needs (0: none).">
+          <Field htmlFor="rule-approvals" errorId={hintId('rule-approvals')} label="Required approvals" error={errors.approvals} hint="Approving reviews a pull request needs (0: none).">
             <Input id="rule-approvals" className="w-24" inputMode="numeric" value={form.approvals} invalid={Boolean(errors.approvals)} aria-describedby={hintId('rule-approvals')}
               onChange={(e) => {
                 set('approvals', e.target.value);
@@ -193,7 +193,7 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
           {check('blockOutdated', 'Require the branch to be up to date with its base')}
           {check('statusCheck', 'Require status checks to pass')}
           {form.statusCheck && (
-            <Field id="rule-checks" label="Status checks" error={errors.statusContexts} description="One check per line; glob patterns (ci/*) match several.">
+            <Field htmlFor="rule-checks" errorId={hintId('rule-checks')} label="Status checks" error={errors.statusContexts} hint="One check per line; glob patterns (ci/*) match several.">
               <TextArea id="rule-checks" rows={3} value={form.statusContexts} invalid={Boolean(errors.statusContexts)} aria-describedby={hintId('rule-checks')}
                 onChange={(e) => {
                   set('statusContexts', e.target.value);
@@ -202,7 +202,7 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
           )}
           {check('mergeList', 'Only some people may merge')}
           {form.mergeList && (
-            <Field id="rule-merge-users" label="People who may merge" description="Logins, separated by commas.">
+            <Field htmlFor="rule-merge-users" errorId={hintId('rule-merge-users')} label="People who may merge" hint="Logins, separated by commas.">
               <Input id="rule-merge-users" className="w-full" value={form.mergeUsers} autoComplete="off" spellCheck={false} aria-describedby={hintId('rule-merge-users')}
                 onChange={(e) => {
                   set('mergeUsers', e.target.value);
@@ -213,13 +213,13 @@ const RuleDialog = observer(function RuleDialog({owner, repo, repoId, rule, othe
         <fieldset className="flex flex-col gap-2">
           <legend className="pb-1 text-base font-medium text-fg">Commits and files</legend>
           {check('signed', 'Require signed commits')}
-          <Field id="rule-protected" label="Protected files" optional description="Glob patterns separated by “;” (docs/**; *.lock): changes to them are refused even from people who may push.">
+          <Field htmlFor="rule-protected" errorId={hintId('rule-protected')} label="Protected files" optional hint="Glob patterns separated by “;” (docs/**; *.lock): changes to them are refused even from people who may push.">
             <Input id="rule-protected" className="w-full" mono value={form.protectedFiles} spellCheck={false} aria-describedby={hintId('rule-protected')}
               onChange={(e) => {
                 set('protectedFiles', e.target.value);
               }}/>
           </Field>
-          <Field id="rule-unprotected" label="Unprotected files" optional description="Glob patterns separated by “;”: pushing changes only to these is allowed even when pushing is not.">
+          <Field htmlFor="rule-unprotected" errorId={hintId('rule-unprotected')} label="Unprotected files" optional hint="Glob patterns separated by “;”: pushing changes only to these is allowed even when pushing is not.">
             <Input id="rule-unprotected" className="w-full" mono value={form.unprotectedFiles} spellCheck={false} aria-describedby={hintId('rule-unprotected')}
               onChange={(e) => {
                 set('unprotectedFiles', e.target.value);

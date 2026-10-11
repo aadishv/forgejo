@@ -19,7 +19,7 @@ import {
   ContextMenuTrigger, CopyField, Dialog, DialogClose, DialogTrigger, EmptyState, Icon, IconButton, Input, LabelChip, ListRow, Menu,
   MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger,
   AnsiText, BlameCell, CodeFileHeader, CodeLine, CodeTokens, DiffStat, LineNo, StepHeader, StatusDot, TabLink, TabNav,
-  ConfirmDialog, Field, FormSection, SectionNav, SectionNavHeading, SectionNavLink, Select, SettingRow, Switch,
+  ConfirmDialog, FormSection, hintId, SectionNav, SectionNavHeading, SectionNavLink, Select, SettingRow, Switch,
   NavGroup, NavHeading, NavItem, Popover, PopoverContent, PopoverTrigger, ProseSource, ResizeHandle, SectionHeading, Shortcut, Skeleton, Status, TextArea, TooltipProvider,
   ColorPicker, Field, LabelPill, ProgressBar,
 } from '../../ui/index.ts';
@@ -367,13 +367,13 @@ export default function Gallery() {
             </SectionNav>
             <div id="settings" className="flex max-w-lg min-w-0 flex-1 flex-col gap-6">
               <FormSection id="gallery-general" title="General" description="A titled part of a settings page.">
-                <Field id="gallery-name" label="Repository name" description="Letters, digits, “-”, “_” and “.”.">
+                <Field htmlFor="gallery-name" errorId={hintId('gallery-name')} label="Repository name" hint="Letters, digits, “-”, “_” and “.”.">
                   <Input id="gallery-name" className="w-full" defaultValue="atlas"/>
                 </Field>
-                <Field id="gallery-site" label="Website" optional error="An address starting with http:// or https://.">
+                <Field htmlFor="gallery-site" errorId={hintId('gallery-site')} label="Website" optional error="An address starting with http:// or https://.">
                   <Input id="gallery-site" className="w-full" invalid defaultValue="atlas.example"/>
                 </Field>
-                <Field id="gallery-filter" label="Branch filter" optional>
+                <Field htmlFor="gallery-filter" errorId={hintId('gallery-filter')} label="Branch filter" optional>
                   <Input id="gallery-filter" className="w-full" mono defaultValue="release/*"/>
                 </Field>
                 <SettingRow id="gallery-wiki" title="Wiki" description="Pages of documentation next to the code." control={<Switch id="gallery-wiki" checked={feature} onCheckedChange={setFeature}/>}/>

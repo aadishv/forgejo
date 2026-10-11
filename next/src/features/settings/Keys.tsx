@@ -116,13 +116,13 @@ function KeyDialog({owner, repo, onClose, onSaved}: {owner: string; repo: string
         e.preventDefault();
         void save();
       }}>
-        <Field id="key-title" label="Title" error={errors.title} description="What uses it (“CI runner”, “docs server”).">
+        <Field htmlFor="key-title" errorId={hintId('key-title')} label="Title" error={errors.title} hint="What uses it (“CI runner”, “docs server”).">
           <Input id="key-title" className="w-full" value={form.title} autoFocus maxLength={50} invalid={Boolean(errors.title)} aria-describedby={hintId('key-title')}
             onChange={(e) => {
               set('title', e.target.value);
             }}/>
         </Field>
-        <Field id="key-key" label="Key" error={errors.key} description="The public key: the contents of a .pub file, starting with ssh-ed25519, ssh-rsa, ecdsa-… or sk-….">
+        <Field htmlFor="key-key" errorId={hintId('key-key')} label="Key" error={errors.key} hint="The public key: the contents of a .pub file, starting with ssh-ed25519, ssh-rsa, ecdsa-… or sk-….">
           <TextArea id="key-key" rows={4} value={form.key} spellCheck={false} invalid={Boolean(errors.key)} aria-describedby={hintId('key-key')} onChange={(e) => {
             set('key', e.target.value);
           }}/>

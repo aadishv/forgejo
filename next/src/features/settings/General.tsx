@@ -107,20 +107,20 @@ function DetailsForm({owner, repo, r}: {owner: string; repo: string; r: Reposito
         e.preventDefault();
         void save();
       }}>
-        <Field id="repo-name" label="Repository name" error={errors.name}
-          description={form.name.trim() !== base.name ? 'Renaming changes its address; Forgejo redirects the old one.' : undefined}>
+        <Field htmlFor="repo-name" errorId={hintId('repo-name')} label="Repository name" error={errors.name}
+          hint={form.name.trim() !== base.name ? 'Renaming changes its address; Forgejo redirects the old one.' : undefined}>
           <Input id="repo-name" className="w-full" value={form.name} maxLength={100} autoComplete="off" spellCheck={false} invalid={Boolean(errors.name)}
             aria-describedby={hintId('repo-name')} onChange={(e) => {
               edit('name', e.target.value);
             }}/>
         </Field>
-        <Field id="repo-description" label="Description" optional error={errors.description}>
+        <Field htmlFor="repo-description" errorId={hintId('repo-description')} label="Description" optional error={errors.description}>
           <TextArea id="repo-description" rows={3} value={form.description} invalid={Boolean(errors.description)} aria-describedby={hintId('repo-description')}
             onChange={(e) => {
               edit('description', e.target.value);
             }}/>
         </Field>
-        <Field id="repo-website" label="Website" optional error={errors.website}>
+        <Field htmlFor="repo-website" errorId={hintId('repo-website')} label="Website" optional error={errors.website}>
           <Input id="repo-website" type="url" className="w-full" placeholder="https://" value={form.website} invalid={Boolean(errors.website)}
             aria-describedby={hintId('repo-website')} onChange={(e) => {
               edit('website', e.target.value);
@@ -359,7 +359,7 @@ function DangerZone({owner, repo, r}: {owner: string; repo: string; r: Repositor
             notify(app, {tone: 'success', title: 'Transfer requested', description: `${target.owner} has to accept it; until then it stays here.`});
           }
         })}>
-        <Field id="transfer-owner" label="New owner" error={newOwner.trim() && 'error' in target ? target.error : undefined}>
+        <Field htmlFor="transfer-owner" errorId={hintId('transfer-owner')} label="New owner" error={newOwner.trim() && 'error' in target ? target.error : undefined}>
           <Input id="transfer-owner" className="w-full" value={newOwner} autoComplete="off" spellCheck={false} placeholder="A user or organization"
             aria-describedby={hintId('transfer-owner')} onChange={(e) => {
               setNewOwner(e.target.value);
