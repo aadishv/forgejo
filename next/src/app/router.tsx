@@ -123,6 +123,27 @@ const inboxRoute = createRoute({
   component: lazyView(() => import('../features/inbox/Inbox.tsx')),
 });
 
+// A new repository and a new organization. "repo" and "org" are names Forgejo reserves (no owner has them),
+// and a static path outranks `/$owner/$repo`. `?org=` (an organization's id) and `?template_id=` are the
+// classic page's.
+const newRepoRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/repo/create',
+  validateSearch: (s): {org?: string; template_id?: string} => ({
+    ...(typeof s.org === 'string' && /^[1-9]\d{0,15}$/.test(s.org) ? {org: s.org} : {}),
+    ...(typeof s.template_id === 'string' && /^[1-9]\d{0,15}$/.test(s.template_id) ? {template_id: s.template_id} : {}),
+  }),
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/new/NewRepo.tsx'), 'NewRepo'),
+});
+
+const newOrgRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/org/create',
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/new/NewOrg.tsx'), 'NewOrg'),
+});
+
 // Repository routes resolve the repository (pool, else API v1) and hydrate
 // its group. `$index` stays a string in the URL; views parse it.
 
@@ -522,7 +543,7 @@ const devRoutes = import.meta.env.DEV ?
 const routeTree = rootRoute.addChildren([
   callbackRoute,
   shellRoute.addChildren([
-    baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
+    baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute, newRepoRoute, newOrgRoute,
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,

@@ -128,6 +128,13 @@ func TestSPARoute(t *testing.T) {
 		"/explore":                                                     false,
 		"/user2.keys":                                                  false, // the user's files (reservedUserPatterns)
 		"/user2.rss":                                                   false,
+		// The new repository and organization forms ("repo" and "org" are reserved: never an owner).
+		"/repo/create":   true,
+		"/org/create":    true,
+		"/repo/migrate":  false, // stays classic
+		"/repo/create/x": false,
+		"/org/org3":      false,
+		"/user2/create":  true, // a repository named "create"
 		// Code addresses open the app's code views (codeAddress).
 		"/user2/repo1/src/branch/master/README.md":                     true,
 		"/user2/repo1/src":                                             true,
@@ -363,6 +370,10 @@ func checkDocument(t *testing.T, rec *httptest.ResponseRecorder, sub string) {
 	assert.Equal(t, sub, cfg.AppSubURL)
 	assert.Equal(t, sub+"/-/next/", cfg.Base)
 	assert.Equal(t, protocol.ProtocolVersion, cfg.Protocol)
+	if assert.NotNil(t, cfg.Repository, "the new repository defaults") {
+		assert.Equal(t, setting.Repository.DefaultBranch, cfg.Repository.DefaultBranch)
+		assert.Equal(t, "sha1", cfg.Repository.ObjectFormats[0], "SHA-1 is the default")
+	}
 	boot := strings.ReplaceAll(bootScript, "`/-/next/`", "`"+sub+"/-/next/`")
 	assert.Contains(t, body, "<script>"+boot+"</script>")
 	sum := sha256.Sum256([]byte(boot))

@@ -4,17 +4,16 @@
 // An owner — a user or an organization — (/{owner}, a canonical route; the
 // classic profile's tabs stay classic): who it is and its repositories, the
 // ones on this device at once (pool), the rest from API v1 when online; its
-// boards; and the classic pages for what the app does not do (the profile,
-// teams, and — for those allowed — settings and a new repository). Its own
-// chunk.
+// boards; a new repository for those allowed (the app's form); and the
+// classic pages for what the app does not do (the profile, teams, and — for
+// those allowed — settings). Its own chunk.
 
-import {useNavigate, useParams} from '@tanstack/react-router';
-import {BookMarked, Building2, CloudOff, KanbanSquare, Lock, Settings, User as UserIcon, Users} from 'lucide-react';
+import {Link, useNavigate, useParams} from '@tanstack/react-router';
+import {BookMarked, BookPlus, Building2, CloudOff, KanbanSquare, Lock, Settings, User as UserIcon, Users} from 'lucide-react';
 import {ClassicMenuItem} from '../../app/ClassicMenuItem.tsx';
 import {observer} from 'mobx-react-lite';
 import {useEffect, useState} from 'react';
 import {online} from '../../app/api.ts';
-import {ClassicLink} from '../../app/ClassicLink.tsx';
 import {hrefOf, useLinkClick} from '../../app/links.ts';
 import {Missing} from '../../app/Missing.tsx';
 import {reach} from '../../app/online.ts';
@@ -23,7 +22,7 @@ import {ShellNotFound} from '../../app/RouteStatus.tsx';
 import {PageBody, PageColumn} from '../../app/shell/Frame.tsx';
 import {PageHeader} from '../../app/shell/PageHeader.tsx';
 import {useApp, useSession} from '../../app/store.ts';
-import {Avatar, Badge, EmptyState, Hint, Icon, ListRow, MenuItem, MenuLabel, MenuSeparator, MoreMenu, Panel, SkeletonText} from '../../ui/index.ts';
+import {Avatar, Badge, Button, EmptyState, Hint, Icon, ListRow, MenuItem, MenuLabel, MenuSeparator, MoreMenu, Panel, SkeletonText} from '../../ui/index.ts';
 import {ago, fullDate} from '../issues/format.ts';
 
 interface OwnerInfo {
@@ -172,10 +171,13 @@ const Repos = observer(function Repos({owner, ownerId, isOrg, create: canCreate}
     }
   }
   const list = [...rows.values()].sort((a, b) => b.updated.localeCompare(a.updated));
-  const create = isOrg ? `/repo/create?org=${String(ownerId)}` : '/repo/create';
   return (
     <Panel label="Repositories" title={<>Repositories <span className="tabular-nums">{list.length || ''}</span></>}
-      actions={canCreate && <ClassicLink to={create} size="sm">New repository</ClassicLink>}>
+      actions={canCreate && (
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/repo/create" search={isOrg ? {org: String(ownerId)} : {}}><Icon icon={BookPlus} size="sm"/>New repository</Link>
+        </Button>
+      )}>
       {list.map((r) => <RepoLine key={r.id} r={r}/>)}
       {remote.state !== 'ready' && away ?
         list.length ? <p className="px-3 py-2 text-sm text-fg-subtle">Repositories that are not on this device load when you are online.</p> :

@@ -55,7 +55,7 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
 
 /**
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
- * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
+ * `/`, `/notifications`, `/issues`, `/pulls`, `/repo/create`, `/org/create`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
  * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/activity[/{period or graph}]`, the wiki (`/{owner}/{repo}/wiki[/…]`),
  * `/{owner}/{repo}/labels`, `/{owner}/{repo}/milestones[/new]`, `/{owner}/{repo}/milestone/{n}[/edit]`,
  * code addresses, the viewer's settings (`/user/settings[/account|appearance|keys]`). `?ui=classic` asks for the classic page, and so does an owner's profile tab
@@ -75,6 +75,8 @@ export function isSpaRoute(path: string, search = ''): boolean {
   const [owner = '', repo = '', kind, n] = segs;
   // The viewer's settings pages (`user` is a reserved name, never an owner).
   if (owner === 'user') return repo === 'settings' && (kind === undefined || (segs.length === 3 && USER_SETTINGS_PAGES.has(kind)));
+  // The new repository and organization forms ("repo" and "org" are reserved: never an owner).
+  if (segs.length === 2 && (owner === 'repo' || owner === 'org') && repo === 'create') return true;
   if (!isOwnerName(owner) || !NAME.test(repo)) return false;
   if (kind === undefined) return true;
   // The wiki's pages and views; a page's revisions are the classic page's (spa.go wikiClassic).

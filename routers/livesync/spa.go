@@ -25,6 +25,7 @@ import (
 
 	repo_model "forgejo.org/models/repo"
 	user_model "forgejo.org/models/user"
+	"forgejo.org/modules/git"
 	"forgejo.org/modules/json"
 	"forgejo.org/modules/log"
 	"forgejo.org/modules/setting"
@@ -58,6 +59,8 @@ var spaRoutes = [][]string{
 	{"notifications"},     // the inbox
 	{"issues"},            // the viewer's issues
 	{"pulls"},             // the viewer's pull requests
+	{"repo", "create"},    // a new repository ("repo" and "org" are reserved user names: never an owner)
+	{"org", "create"},     // a new organization
 	{"{owner}"},           // an owner's repositories (the profile's other tabs stay classic: profileTab)
 	{"{owner}", "{repo}"}, // a repository's home
 	{"{owner}", "{repo}", "issues"},
@@ -678,6 +681,10 @@ func nextConfig() *protocol.NextConfig {
 		AppURL: setting.AppURL, AppSubURL: setting.AppSubURL, Base: setting.AppSubURL + nextBase,
 		AppName: setting.AppName, Version: setting.AppVer, Protocol: protocol.ProtocolVersion,
 		SSHClonePrefix: sshClonePrefix(),
+		Repository: &protocol.NextRepository{
+			DefaultBranch: setting.Repository.DefaultBranch, DefaultPrivate: setting.Repository.DefaultPrivate,
+			ForcePrivate: setting.Repository.ForcePrivate, ObjectFormats: objectFormats(),
+		},
 	}
 	if app := livesync_service.OAuthApp(); app != nil {
 		cfg.OAuth = &protocol.NextOAuth{
@@ -687,6 +694,16 @@ func nextConfig() *protocol.NextConfig {
 		}
 	}
 	return cfg
+}
+
+// objectFormats are the names of the object formats new repositories may
+// use (git.SupportedObjectFormats: SHA-1 first, SHA-256 with a Git that has it).
+func objectFormats() []string {
+	names := make([]string, 0, len(git.SupportedObjectFormats))
+	for _, f := range git.SupportedObjectFormats {
+		names = append(names, f.Name())
+	}
+	return names
 }
 
 // sshClonePrefix is the part of every SSH clone URL before "{owner}/{repo}.git"
