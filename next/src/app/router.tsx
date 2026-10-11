@@ -273,12 +273,15 @@ const nextRepoRoute = createRoute({
 const notFoundRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '$',
-  beforeLoad: ({context: {app}, params}) => {
+  beforeLoad: ({context: {app}, params, location}) => {
     const path = `/${(params._splat ?? '').replace(/^\/+|\/+$/g, '')}`;
     const segs = path.split('/').filter(Boolean);
     const to = segs.length > 2 ? nextPathOf(path) : undefined;
+    // The query goes along (a comparison's `?expand=1` opens its pull request form), unless the page's address has
+    // its own (a pull request's tab).
+    const query = to?.includes('?') ? '' : location.searchStr;
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's redirect protocol
-    if (to && to !== path) throw redirect({href: sitePath(app.config, to), replace: true});
+    if (to && to !== path) throw redirect({href: sitePath(app.config, `${to}${query}`), replace: true});
   },
   component: ShellNotFound,
 });
