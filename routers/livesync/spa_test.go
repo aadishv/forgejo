@@ -134,7 +134,14 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/actions/runs/3/jobs/0/attempt/1":                 true,
 		"/user2/repo1/actions/runs/3/artifacts":                        false,
 		"/user2/repo1/compare/master...feature/x":                      true,
-		"/user2/repo1/compare/master":                                  false,
+		"/user2/repo1/compare/master":                                  true,  // the head alone (the base: the default branch)
+		"/user2/repo1/compare":                                         true,  // the page asks for a head
+		"/user2/repo1/compare/master...user1:feature":                  true,  // a fork's branch (the page says so)
+		"/user2/repo1/compare/master..feature":                         false, // a direct comparison stays classic
+		"/user2/repo1/compare/master...feature.diff":                   false,
+		"/user2/repo1/compare/feature.patch":                           false,
+		"/user2/repo1/compare/master...":                               false,
+		"/user2/repo1/compare/...feature":                              false,
 		"/user2/repo1/pulls/2/files":                                   true,
 		"/user2/repo1/pulls/2/checks":                                  false,
 		"/user2/repo1/src/branch/master/../../settings":                false,
