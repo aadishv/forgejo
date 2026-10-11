@@ -53,6 +53,14 @@ func routeModules(p string) []string {
 	if len(segs) >= 3 && segs[2] == "wiki" {
 		return []string{"src/features/wiki/WikiPage.tsx"}
 	}
+	// A canonical code address (/{owner}/{repo}/releases/new, src/…): the app
+	// goes on to its code view, or to a pull request's tab.
+	if len(segs) >= 3 && codeAddress(segs[2:]) {
+		if segs[2] == "pulls" {
+			return []string{"src/features/issue/IssueView.tsx"}
+		}
+		return []string{"src/features/code/CodePage.tsx"}
+	}
 	if len(segs) >= 3 && segs[2] == "activity" {
 		return []string{"src/features/activity/Activity.tsx"}
 	}

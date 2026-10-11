@@ -12,6 +12,9 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/pulls/9/files')).toBe('/acme/atlas/pulls/9?tab=files');
   expect(nextPathOf('/acme/atlas/src/branch/main/docs/a b.md')).toBe('/-/next/code/acme/atlas/src/branch/main/docs/a%20b.md/-');
   expect(nextPathOf('/acme/atlas/commit/' + 'a'.repeat(40))).toBe(`/-/next/code/acme/atlas/commit/${'a'.repeat(40)}/-`);
+  expect(nextPathOf('/acme/atlas/releases/new')).toBe('/-/next/code/acme/atlas/releases/new/-');
+  expect(nextPathOf('/acme/atlas/releases/edit/release/1.0')).toBe('/-/next/code/acme/atlas/releases/edit/release/1.0/-');
+  expect(classicPathOf('/-/next/code/acme/atlas/releases/edit/v1.2/-')).toBe('/acme/atlas/releases/edit/v1.2');
   expect(nextPathOf('/acme/atlas/actions/runs/3')).toBe('/-/next/code/acme/atlas/actions/runs/3/-');
   expect(nextPathOf('/acme/atlas/projects/1')).toBe('/-/next/projects/1');
   expect(nextPathOf('/acme/-/projects/3')).toBe('/-/next/projects/3');
