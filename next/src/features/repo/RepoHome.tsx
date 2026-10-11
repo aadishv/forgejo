@@ -1,37 +1,33 @@
 // Copyright 2026 The Forgejo Authors. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// A repository's home (/{owner}/{repo}): what it is (description, topics,
-// clone URL, latest commit, counts) from the pool, its top-level files and
-// its README from the code cache (by commit and blob SHA: there offline
-// once seen). The tabs lead to everything else. Its own chunk.
+// A repository's home (/{owner}/{repo}): its name and kind, its latest
+// commit, top-level files and README from the code cache (by commit and blob
+// SHA: there offline once seen), and beside them the side pane
+// (AboutSidebar.tsx: what it is, its releases and languages). The tabs lead
+// to everything else. Its own chunk.
 
-import {Link} from '@tanstack/react-router';
-import {BookMarked, CircleDot, Copy, Folder, FolderGit2, GitBranch, GitPullRequest, Globe, Package, SquarePen, Star, GitFork} from 'lucide-react';
+import {BookMarked, Folder, FolderGit2, GitBranch, SquarePen} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
-import {Fragment, type ReactNode, useEffect, useMemo} from 'react';
+import {type ReactNode, useEffect, useMemo} from 'react';
 import {whenIdle} from '../../app/lazy.tsx';
-import {sitePath} from '../../app/config.ts';
 import {openCreate} from '../../app/create.ts';
 import {hrefOf, useLinkClick} from '../../app/links.ts';
-import {notify} from '../../app/notices.ts';
 import {codePath} from '../../app/paths.ts';
 import {PageBody, PageColumn} from '../../app/shell/Frame.tsx';
 import {shortcutHint} from '../../app/shortcuts/index.ts';
 import {useApp} from '../../app/store.ts';
 import {CodeSource} from '../../code/source.ts';
 import type {APITree, APITreeEntry} from '../../protocol/types.gen.ts';
-import {
-  Badge, Button, EmptyState, Icon, IconButton, ListRow, Property, PropertyList, PropertyValue, SkeletonText, TextLink,
-} from '../../ui/index.ts';
+import {Badge, Button, EmptyState, Icon, ListRow, SkeletonText} from '../../ui/index.ts';
 import {refTable, useLoad, useSource} from '../code/hooks.ts';
 import {ReadmePanel, readmeOf} from '../code/Rendered.tsx';
 import {Unloaded} from '../code/states.tsx';
 import {entryParts, FilesPanel, RefCommit, treeOrder} from '../code/tree.tsx';
 import {usePool} from '../issues/cells.tsx';
-import {ago, fullDate, shortDate} from '../issues/format.ts';
+import {AboutSidebar} from './AboutSidebar.tsx';
 import {RepoHeader, Unavailable, useRepoPage} from './repoPage.tsx';
-import {cloneUrl, EmptyRepo} from '../code/states.tsx';
+import {EmptyRepo} from '../code/states.tsx';
 
 export function RepoHome() {
   const {owner, repo, repoId} = useRepoPage();
@@ -62,7 +58,7 @@ const RepoHomePage = observer(function RepoHomePage({owner, repo, repoId}: {owne
             <Files owner={owner} repo={repo} repoId={repoId}/>
           </PageColumn>
           <aside aria-label="About" className="shrink-0 border-t border-border p-4 @xl:w-pane @xl:border-t-0 @xl:border-l">
-            <About owner={owner} repo={repo} repoId={repoId}/>
+            <AboutSidebar owner={owner} repo={repo} repoId={repoId}/>
           </aside>
         </div>
       </PageBody>
@@ -70,20 +66,16 @@ const RepoHomePage = observer(function RepoHomePage({owner, repo, repoId}: {owne
   );
 });
 
-/** The description, the repository's kind and its topics. */
+/** The repository's name and kind (its description and topics are in the side pane's About, like GitHub's). */
 const Summary = observer(function Summary({repoId}: {repoId: number}) {
   const r = usePool().model('Repository').get(repoId)?.data;
   if (!r) return null;
-  const flags = [r.private && 'Private', r.fork && 'Fork', r.mirror && 'Mirror', r.template && 'Template', r.archived && 'Archived'].filter((f): f is string => Boolean(f));
+  const flags = [r.private ? 'Private' : 'Public', r.fork && 'Fork', r.mirror && 'Mirror', r.template && 'Template', r.archived && 'Archived'].filter((f): f is string => Boolean(f));
   return (
-    <div className="flex flex-col gap-2">
-      <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold text-fg">
-        {r.name}
-        {flags.map((f) => <Badge key={f} tone={f === 'Archived' ? 'warning' : 'neutral'}>{f}</Badge>)}
-      </h2>
-      {r.description ? <p className="max-w-lg text-md text-fg-muted">{r.description}</p> : <p className="text-md text-fg-subtle">No description.</p>}
-      {r.topics.length > 0 && <div className="flex flex-wrap gap-1">{r.topics.map((t) => <Badge key={t} tone="accent">{t}</Badge>)}</div>}
-    </div>
+    <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold text-fg">
+      {r.name}
+      {flags.map((f) => <Badge key={f} tone={f === 'Archived' ? 'warning' : 'neutral'} round>{f}</Badge>)}
+    </h2>
   );
 });
 
@@ -157,86 +149,3 @@ function EntryRow({owner, repo, branch, entry}: {owner: string; repo: string; br
     </ListRow>
   );
 }
-
-/** The side pane: clone URL, website, counts, the latest release. */
-const About = observer(function About({owner, repo, repoId}: {owner: string; repo: string; repoId: number}) {
-  const app = useApp();
-  const pool = usePool();
-  const r = pool.model('Repository').get(repoId)?.data;
-  let issues = 0;
-  let pulls = 0;
-  for (const i of pool.model('Issue').by('repo_id', repoId)) {
-    if (i.get('state') !== 'open') continue;
-    if (i.get('is_pull')) pulls++;
-    else issues++;
-  }
-  const release = [...pool.model('Release').by('repo_id', repoId)].map((x) => x.data).filter((x) => !x.is_tag && !x.draft && !x.prerelease)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  if (!r) return null;
-  const clone = cloneUrl(app.config.app_url, owner, repo);
-  const copy = () => {
-    void navigator.clipboard.writeText(clone).then(() => {
-      notify(app, {tone: 'success', title: 'Clone URL copied'});
-    }, () => undefined);
-  };
-  return (
-    <PropertyList>
-      <Property label="Clone" stacked>
-        <PropertyValue>
-          <span className="flex min-w-0 items-start gap-1">
-            {/* Whole, on the pane's full width: wrapped after a slash when it is longer, never mid-word. */}
-            <span className="min-w-0 flex-1 py-0.5 font-mono text-code break-normal text-fg select-all">
-              {clone.split(/(?<=\/)/).map((part, i) => <Fragment key={i}>{part}<wbr/></Fragment>)}
-            </span>
-            <IconButton size="sm" icon={Copy} label="Copy the clone URL" onClick={copy}/>
-          </span>
-        </PropertyValue>
-      </Property>
-      {r.website && /^https?:\/\//.test(r.website) && (
-        <Property label="Website">
-          <PropertyValue><span className="flex min-w-0 items-center gap-2"><Icon icon={Globe} size="sm"/><TextLink><a href={r.website} target="_blank" rel="noopener noreferrer">{r.website.replace(/^https?:\/\//, '')}</a></TextLink></span></PropertyValue>
-        </Property>
-      )}
-      <Property label="Issues">
-        <PropertyValue><span className="flex items-center gap-2"><Icon icon={CircleDot} size="sm"/><TextLink><Link to="/$owner/$repo/issues" params={{owner, repo}}>{issues} open</Link></TextLink></span></PropertyValue>
-      </Property>
-      <Property label="Pull requests">
-        <PropertyValue><span className="flex items-center gap-2"><Icon icon={GitPullRequest} size="sm"/><TextLink><Link to="/$owner/$repo/pulls" params={{owner, repo}}>{pulls} open</Link></TextLink></span></PropertyValue>
-      </Property>
-      {release && (
-        <Property label="Release">
-          <PropertyValue>
-            <span className="flex min-w-0 items-center gap-2">
-              <Icon icon={Package} size="sm"/>
-              <TextLink><Link to="/-/next/code/$owner/$repo/$" params={{owner, repo, _splat: 'releases/-'}}>{release.name || release.tag_name}</Link></TextLink>
-              <span className="shrink-0 text-fg-subtle">{shortDate(release.created_at)}</span>
-            </span>
-          </PropertyValue>
-        </Property>
-      )}
-      <Property label="Stars">
-        <PropertyValue tone="muted"><span className="flex items-center gap-2 tabular-nums"><Icon icon={Star} size="sm"/>{r.stars_count}</span></PropertyValue>
-      </Property>
-      <Property label="Forks">
-        <PropertyValue tone="muted"><span className="flex items-center gap-2 tabular-nums"><Icon icon={GitFork} size="sm"/>{r.forks_count}</span></PropertyValue>
-      </Property>
-      <Property label="Updated">
-        <PropertyValue tone="muted"><time dateTime={r.updated_at} title={fullDate(r.updated_at)}>{ago(r.updated_at)}</time></PropertyValue>
-      </Property>
-      {r.fork && r.parent_id > 0 && <ForkOf parentId={r.parent_id}/>}
-      {!r.empty && <Property label="Archive">
-        <PropertyValue tone="muted"><TextLink><a href={sitePath(app.config, `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/archive/${encodeURIComponent(r.default_branch)}.zip`)} download>{r.default_branch}.zip</a></TextLink></PropertyValue>
-      </Property>}
-    </PropertyList>
-  );
-});
-
-const ForkOf = observer(function ForkOf({parentId}: {parentId: number}) {
-  const p = usePool().model('Repository').get(parentId)?.data;
-  if (!p) return null;
-  return (
-    <Property label="Forked from">
-      <PropertyValue><TextLink><Link to="/$owner/$repo" params={{owner: p.owner_name, repo: p.name}} activeOptions={{exact: true}}>{p.full_name}</Link></TextLink></PropertyValue>
-    </Property>
-  );
-});

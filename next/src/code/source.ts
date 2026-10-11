@@ -292,15 +292,18 @@ export class CodeSource {
     }
   }
 
-  /** One request per key at a time; cache first. `fetcher` returns the value to cache (and its size). */
-  private cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  /**
+   * One request per key at a time; cache first. `fetcher` returns the value to cache (and its size); `keep` (default:
+   * all) says whether a fetched value is final enough to cache.
+   */
+  private cached<T>(key: string, fetcher: () => Promise<T>, keep?: (v: T) => boolean): Promise<T> {
     const running = this.inflight.get(key);
     if (running) return running as Promise<T>;
     const p = (async () => {
       const hit = await this.cache.get<T>(key);
       if (hit !== undefined) return hit;
       const v = await fetcher();
-      this.cache.put(key, v);
+      if (!keep || keep(v)) this.cache.put(key, v);
       return v;
     })().finally(() => {
       this.inflight.delete(key);
@@ -576,6 +579,22 @@ export class CodeSource {
       const commits = (j.commits ?? []).map(commitInfo);
       return {commits, total: j.total_commits ?? commits.length};
     });
+  }
+
+  static languagesKey(repoId: number, commit: string): string {
+    return `langs:${String(repoId)}:${commit}`;
+  }
+
+  /**
+   * The repository's languages (name → bytes, largest first), asked for once per commit of its default branch and
+   * kept like the rest of the cache: there at once (and offline) on the next visit. Forgejo computes them after a
+   * push, so an empty answer (not computed yet) is not kept.
+   */
+  languages(repoId: number, commit: string): Promise<Record<string, number>> {
+    return this.cached(CodeSource.languagesKey(repoId, commit), async () => {
+      const res = await this.request('v1', `${this.repoPath(repoId)}/languages`);
+      return await readJson(res) as Record<string, number>;
+    }, (v) => Object.keys(v).length > 0);
   }
 
   close(): void {
