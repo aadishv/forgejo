@@ -14,6 +14,9 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/acme/repo/compare/main..feature', '/acme/repo/compare/main...feature.diff', '/acme/repo/compare/feature.patch', '/acme/repo/compare/main...', '/acme/repo/compare/...x']) {
     expect(isSpaRoute(p), p).toBe(false);
   }
+  // A writer's release form (spa.go codeAddress): a new release, a tag's release to edit; a release's page is classic.
+  for (const p of ['/acme/repo/releases', '/acme/repo/releases/new', '/acme/repo/releases/edit/v1.0', '/acme/repo/releases/edit/release/1.0']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/acme/repo/releases/tag/v1', '/acme/repo/releases/edit', '/acme/repo/releases/new/x', '/acme/repo/releases/latest']) expect(isSpaRoute(p), p).toBe(false);
   // The activity pages (spa.go activityPeriods): the Pulse of a period, and its graphs.
   for (const p of ['/acme/repo/activity', '/acme/repo/activity/monthly', '/acme/repo/activity/daily', '/acme/repo/activity/contributors', '/acme/repo/activity/code-frequency', '/acme/repo/activity/recent-commits']) {
     expect(isSpaRoute(p), p).toBe(true);

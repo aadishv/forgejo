@@ -146,6 +146,13 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/branches/x":                                      false,
 		"/user2/repo1/releases":                                        true,
 		"/user2/repo1/releases/tag/v1":                                 false,
+		"/user2/repo1/releases/new":                                    true,
+		"/user2/repo1/releases/new/x":                                  false,
+		"/user2/repo1/releases/edit/v1.0":                              true,
+		"/user2/repo1/releases/edit/release/1.0":                       true, // a tag with slashes
+		"/user2/repo1/releases/edit":                                   false,
+		"/user2/repo1/releases/edit/../../settings":                    false,
+		"/user2/repo1/releases/latest":                                 false,
 		"/user2/repo1/actions":                                         true,
 		"/user2/repo1/actions/runs/3":                                  true,
 		"/user2/repo1/actions/runs/3/jobs/0/attempt/1":                 true,

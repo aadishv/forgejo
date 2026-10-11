@@ -135,8 +135,13 @@ func codeAddress(rest []string) bool {
 		return false
 	case "commit":
 		return len(rest) == 2 && shaPattern.MatchString(rest[1])
-	case "branches", "tags", "releases":
+	case "branches", "tags":
 		return len(rest) == 1
+	case "releases":
+		// The list, and a writer's release form: a new release, a tag's release
+		// (whose name may have slashes) to edit. A release's own page
+		// (releases/tag/…) stays classic.
+		return len(rest) == 1 || len(rest) == 2 && rest[1] == "new" || len(rest) >= 3 && rest[1] == "edit"
 	case "actions":
 		switch {
 		case len(rest) == 1:
