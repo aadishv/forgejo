@@ -8,11 +8,11 @@
 // for when the pointer or the focus reaches the button, so it is usually
 // there when the field opens; kept forever by commit SHA. Matching is local:
 // each keystroke rescans only the previous one's matches, and never holds
-// up the field (a deferred value).
+// up the field (a deferred value). The highlighted result is fetched ahead.
 
 import {useNavigate} from '@tanstack/react-router';
 import {File, Search} from 'lucide-react';
-import {useDeferredValue, useMemo, useState} from 'react';
+import {useDeferredValue, useEffect, useMemo, useState} from 'react';
 import {codeSplat, type Resolved} from '../../code/refs.ts';
 import {FileSearcher, markRuns} from '../../code/fuzzy.ts';
 import {CodeSource, type PathList} from '../../code/source.ts';
@@ -24,6 +24,8 @@ import {Unloaded} from './states.tsx';
 
 /** Files listed at most (type more to narrow). */
 const LIMIT = 50;
+/** A highlighted result is prefetched once it stays highlighted this long (ms): not every row the arrows pass. */
+const PREFETCH_DELAY = 120;
 
 interface FinderProps {
   owner: string;
@@ -79,6 +81,20 @@ function Finder({owner, repo, repoId, at, onClose}: FinderProps & {onClose: () =
     selected = first;
     setSel({first, value: first});
   }
+  // The highlighted file (under the pointer, or reached with the arrows), once it stays a moment: fetched and
+  // highlighted at idle priority, like a tree row on intent, so that opening it paints at once.
+  useEffect(() => {
+    if (!selected) return undefined;
+    const timer = setTimeout(() => {
+      void src.entry(repoId, at.sha, selected).then((e) => {
+        if (e?.type !== 'blob') return null;
+        return src.blob(repoId, e.sha, selected, e.size).then((c) => (c.kind === 'text' ? src.highlight(repoId, e.sha, selected, c.text, 'idle') : null));
+      }).catch(() => undefined);
+    }, PREFETCH_DELAY);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [src, repoId, at.sha, selected]);
   const open = (path: string) => {
     onClose();
     void navigate(codeTo(owner, repo, codeSplat('src', {kind: at.kind, ref: at.kind === 'commit' ? at.sha : at.ref}, path)));

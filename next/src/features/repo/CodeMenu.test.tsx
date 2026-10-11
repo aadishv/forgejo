@@ -71,6 +71,8 @@ describe('the overview\'s file bar', () => {
     expect(screen.getByRole('link', {name: '2 tags'}).getAttribute('href')).toBe('/-/next/code/acme/website/tags/-');
     const find = screen.getByRole('button', {name: 'Go to file'});
     const code = screen.getByRole('button', {name: 'Code'});
+    // GitHub's green button (Button variant success).
+    expect(code.className).toContain('bg-success-solid');
     expect(screen.getByRole('link', {name: '2 tags'}).compareDocumentPosition(find) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(find.compareDocumentPosition(code) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Above the files panel, not in it.
@@ -119,7 +121,9 @@ describe('the overview\'s file bar', () => {
       postMessage = () => undefined;
       terminate = () => undefined;
     });
-    const {router} = await renderHome(base, {paths: ['docs/guide.md', 'README.md', 'src/app/App.tsx', 'src/readme_parser.go']});
+    const {router, src} = await renderHome(base, {paths: ['docs/guide.md', 'README.md', 'src/app/App.tsx', 'src/readme_parser.go']});
+    const blob = vi.spyOn(src, 'blob').mockResolvedValue({kind: 'text', text: '# Website', size: 9});
+    const highlight = vi.spyOn(src, 'highlight').mockResolvedValue(null);
     act(() => {
       fireEvent.keyDown(document.body, {key: 't'});
     });
@@ -132,6 +136,13 @@ describe('the overview\'s file bar', () => {
     fireEvent.change(input, {target: {value: 'rdme'}});
     await waitFor(() => {
       expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['README.md', 'src/readme_parser.go']);
+    });
+    // The highlighted result is fetched and highlighted ahead (idle), from its entry in the cached root tree.
+    await waitFor(() => {
+      expect(blob).toHaveBeenCalledWith(20, 'd'.repeat(40), 'README.md', 100);
+    });
+    await waitFor(() => {
+      expect(highlight).toHaveBeenCalledWith(20, 'd'.repeat(40), 'README.md', '# Website', 'idle');
     });
     fireEvent.keyDown(input, {key: 'Enter'});
     await waitFor(() => {

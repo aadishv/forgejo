@@ -90,6 +90,7 @@ export default function Gallery() {
           <Button variant="primary" icon={Plus} tooltip="Create issue" shortcut="C">New issue</Button>
           <Button>Secondary</Button>
           <Button variant="ghost">Ghost</Button>
+          <Button variant="success" icon={Code2}>Code</Button>
           <Button variant="danger" icon={Trash2}>Delete</Button>
           <Button disabled>Disabled</Button>
           <Button size="sm" variant="primary">Small</Button>
@@ -332,7 +333,7 @@ export default function Gallery() {
 
         <Section title="Code menu (the overview's file bar), copy field">
           <Popover>
-            <PopoverTrigger asChild><Button size="sm" variant="primary" icon={Code2}>Code<Icon icon={ChevronDown} size="sm"/></Button></PopoverTrigger>
+            <PopoverTrigger asChild><Button size="sm" variant="success" icon={Code2}>Code<Icon icon={ChevronDown} size="sm"/></Button></PopoverTrigger>
             <PopoverContent width="md" align="start">
               <CodeMenuPanel https="https://code.example/acme/website.git" ssh="git@code.example:acme/website.git" onCopy={() => undefined}
                 archives={[{format: 'zip', href: '#code'}, {format: 'tar.gz', href: '#code'}]}/>
