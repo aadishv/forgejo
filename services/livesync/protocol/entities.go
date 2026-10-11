@@ -536,45 +536,50 @@ type BlockedUser struct {
 // them only to readers of that repository's issues or pulls). Type is Forgejo's comment type name ("comment", "close", "label",
 // "code", ...); the other fields are set as the type uses them.
 type Comment struct {
-	ID               int64     `json:"id"`
-	IssueID          int64     `json:"issue_id"`
-	Type             string    `json:"type"`
-	PosterID         int64     `json:"poster_id"`
-	OriginalAuthor   string    `json:"original_author"`
-	OriginalAuthorID int64     `json:"original_author_id"`
-	Body             string    `json:"body"`
-	BodyHTML         string    `json:"body_html"`
-	BodyTruncated    bool      `json:"body_truncated,omitempty"`
-	ContentVersion   int       `json:"content_version"`
-	LabelID          int64     `json:"label_id"`
-	OldProjectID     int64     `json:"old_project_id"`
-	ProjectID        int64     `json:"project_id"`
-	OldMilestoneID   int64     `json:"old_milestone_id"`
-	MilestoneID      int64     `json:"milestone_id"`
-	TimeID           int64     `json:"time_id"`
-	AssigneeID       int64     `json:"assignee_id"`
-	AssigneeTeamID   int64     `json:"assignee_team_id"`
-	RemovedAssignee  bool      `json:"removed_assignee"`
-	ResolveDoerID    int64     `json:"resolve_doer_id"`
-	OldTitle         string    `json:"old_title"`
-	NewTitle         string    `json:"new_title"`
-	OldRef           string    `json:"old_ref"`
-	NewRef           string    `json:"new_ref"`
-	DependentIssueID int64     `json:"dependent_issue_id"`
-	Line             int64     `json:"line"`
-	ExtraLinesCount  int64     `json:"extra_lines_count"`
-	TreePath         string    `json:"path"`
-	Patch            string    `json:"diff_hunk"`
-	CommitSHA        string    `json:"commit_id"`
-	ReviewID         int64     `json:"review_id"`
-	Invalidated      bool      `json:"invalidated"`
-	RefRepoID        int64     `json:"ref_repo_id"`
-	RefIssueID       int64     `json:"ref_issue_id"`
-	RefCommentID     int64     `json:"ref_comment_id"`
-	RefAction        int       `json:"ref_action"`
-	RefIsPull        bool      `json:"ref_is_pull"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               int64  `json:"id"`
+	IssueID          int64  `json:"issue_id"`
+	Type             string `json:"type"`
+	PosterID         int64  `json:"poster_id"`
+	OriginalAuthor   string `json:"original_author"`
+	OriginalAuthorID int64  `json:"original_author_id"`
+	Body             string `json:"body"`
+	BodyHTML         string `json:"body_html"`
+	BodyTruncated    bool   `json:"body_truncated,omitempty"`
+	ContentVersion   int    `json:"content_version"`
+	LabelID          int64  `json:"label_id"`
+	OldProjectID     int64  `json:"old_project_id"`
+	ProjectID        int64  `json:"project_id"`
+	OldMilestoneID   int64  `json:"old_milestone_id"`
+	MilestoneID      int64  `json:"milestone_id"`
+	TimeID           int64  `json:"time_id"`
+	AssigneeID       int64  `json:"assignee_id"`
+	AssigneeTeamID   int64  `json:"assignee_team_id"`
+	RemovedAssignee  bool   `json:"removed_assignee"`
+	ResolveDoerID    int64  `json:"resolve_doer_id"`
+	OldTitle         string `json:"old_title"`
+	NewTitle         string `json:"new_title"`
+	OldRef           string `json:"old_ref"`
+	NewRef           string `json:"new_ref"`
+	DependentIssueID int64  `json:"dependent_issue_id"`
+	// DependencyRole is this issue's side of an add_dependency or
+	// remove_dependency event: "blocked" (it depends on DependentIssueID),
+	// "blocks" (DependentIssueID depends on it), or "" when unknown. Forgejo
+	// writes the same event on both issues, the blocked one's first.
+	DependencyRole  string    `json:"dependency_role,omitempty"`
+	Line            int64     `json:"line"`
+	ExtraLinesCount int64     `json:"extra_lines_count"`
+	TreePath        string    `json:"path"`
+	Patch           string    `json:"diff_hunk"`
+	CommitSHA       string    `json:"commit_id"`
+	ReviewID        int64     `json:"review_id"`
+	Invalidated     bool      `json:"invalidated"`
+	RefRepoID       int64     `json:"ref_repo_id"`
+	RefIssueID      int64     `json:"ref_issue_id"`
+	RefCommentID    int64     `json:"ref_comment_id"`
+	RefAction       int       `json:"ref_action"`
+	RefIsPull       bool      `json:"ref_is_pull"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // Reaction is an emoji reaction on an issue or comment (group

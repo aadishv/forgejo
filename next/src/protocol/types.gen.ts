@@ -116,6 +116,22 @@ export interface APICommentResolved {
   resolved: boolean;
 }
 /**
+ * APINotificationStatus sets the status ("unread", "read" or "pinned") of
+ * the viewer's notifications IDs (1 to APINotificationStatusMax) in one
+ * transaction, as API v1's thread PATCH does for one (undoing "Mark all
+ * read": exactly the notifications it marked, back to unread). A
+ * notification deleted meanwhile is skipped; one of another user is 404
+ * (and nothing changes). Idempotent.
+ */
+export interface APINotificationStatus {
+  ids: number /* int64 */[];
+  status: string;
+}
+/**
+ * APINotificationStatusMax bounds APINotificationStatus.IDs.
+ */
+export const APINotificationStatusMax = 1000;
+/**
  * APIIssueProject puts an issue on a project's board (in ColumnID, or the
  * project's default column when 0; at the column's end) or, with
  * ProjectID 0, takes it off its project. An issue is on one project at a
@@ -1139,6 +1155,13 @@ export interface Comment {
   old_ref: string;
   new_ref: string;
   dependent_issue_id: number /* int64 */;
+  /**
+   * DependencyRole is this issue's side of an add_dependency or
+   * remove_dependency event: "blocked" (it depends on DependentIssueID),
+   * "blocks" (DependentIssueID depends on it), or "" when unknown. Forgejo
+   * writes the same event on both issues, the blocked one's first.
+   */
+  dependency_role?: string;
   line: number /* int64 */;
   extra_lines_count: number /* int64 */;
   path: string;
@@ -1945,7 +1968,7 @@ export const SchemaIssueWatch = 1;
 export const SchemaWatch = 1;
 export const SchemaStar = 1;
 export const SchemaBlockedUser = 1;
-export const SchemaComment = 1;
+export const SchemaComment = 2; // 2: dependency_role
 export const SchemaReaction = 1;
 export const SchemaReview = 1;
 export const SchemaReviewVerdict = 1;

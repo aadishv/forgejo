@@ -99,6 +99,7 @@ func codeAddress(rest []string) bool {
 		}
 		return false
 	case "commit":
+		// A full SHA, or an abbreviated one (typed or pasted): the app resolves it to the full one's address.
 		return len(rest) == 2 && shaPattern.MatchString(rest[1])
 	case "branches", "tags", "releases":
 		return len(rest) == 1
@@ -125,8 +126,9 @@ func codeAddress(rest []string) bool {
 	return false
 }
 
-// shaPattern is a full commit SHA (SHA-1 or SHA-256).
-var shaPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+// shaPattern is a commit SHA (SHA-1 or SHA-256), whole or abbreviated to 7
+// digits or more (next/src/code/refs.ts abbreviatedSha).
+var shaPattern = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 
 // spaRoute reports whether p (normalised, without the sub-path) is a
 // route of spaRoutes.

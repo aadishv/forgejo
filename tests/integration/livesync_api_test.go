@@ -19,6 +19,7 @@ import (
 	"time"
 
 	actions_model "forgejo.org/models/actions"
+	activities_model "forgejo.org/models/activities"
 	auth_model "forgejo.org/models/auth"
 	"forgejo.org/models/db"
 	issues_model "forgejo.org/models/issues"
@@ -143,6 +144,7 @@ func livesyncAPIScenario(t *testing.T, u *url.URL) {
 	t.Run("markup", func(t *testing.T) { livesyncAPIMarkup(t, user2, user5) })
 	t.Run("issue project", func(t *testing.T) { livesyncAPIIssueProject(t, user2, user5) })
 	t.Run("resolve conversation", func(t *testing.T) { livesyncAPIResolve(t, user2, user5) })
+	t.Run("notification status", func(t *testing.T) { livesyncAPINotificationStatus(t, user2, user5, read2) })
 	t.Run("auth", func(t *testing.T) {
 		MakeRequest(t, livesyncAPI(t, "PATCH", "/issues/1/body", "", map[string]any{"body": "x"}), http.StatusUnauthorized)
 		MakeRequest(t, livesyncAPI(t, "GET", "/repos/1/blobs/x", "bad-token", nil), http.StatusUnauthorized)
@@ -720,6 +722,31 @@ func livesyncAPIResolve(t *testing.T, user2, user5 string) {
 	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/2/resolved", user2, protocol.APICommentResolved{Resolved: true}), http.StatusUnprocessableEntity)
 	MakeRequest(t, livesyncAPI(t, "PUT", "/comments/99999/resolved", user2, protocol.APICommentResolved{Resolved: true}), http.StatusNotFound)
 	unittest.AssertExistsAndLoadBean(t, &issues_model.Comment{ID: 5, ResolveDoerID: 0})
+}
+
+func livesyncAPINotificationStatus(t *testing.T, user2, user5, read2 string) {
+	status := func(id int64) activities_model.NotificationStatus {
+		return unittest.AssertExistsAndLoadBean(t, &activities_model.Notification{ID: id}).Status
+	}
+	// Notifications 4 and 5 of user2 (unread) to read and back (Undo of "Mark all read"), again (idempotent); an id
+	// deleted meanwhile is skipped.
+	for range 2 {
+		MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user2, protocol.APINotificationStatus{IDs: []int64{4, 5, 99999}, Status: "read"}), http.StatusNoContent)
+		assert.Equal(t, activities_model.NotificationStatusRead, status(4))
+		assert.Equal(t, activities_model.NotificationStatusRead, status(5))
+	}
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user2, protocol.APINotificationStatus{IDs: []int64{4, 5}, Status: "unread"}), http.StatusNoContent)
+	assert.Equal(t, activities_model.NotificationStatusUnread, status(4))
+	assert.Equal(t, activities_model.NotificationStatusUnread, status(5))
+	// Another user's notification (nothing changes, not even the viewer's own in the same request), a status that is
+	// none, no ids, a token without write:notification.
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user5, protocol.APINotificationStatus{IDs: []int64{4}, Status: "read"}), http.StatusNotFound)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user2, protocol.APINotificationStatus{IDs: []int64{4, 1}, Status: "read"}), http.StatusNotFound)
+	assert.Equal(t, activities_model.NotificationStatusUnread, status(4))
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user2, protocol.APINotificationStatus{IDs: []int64{4}, Status: "done"}), http.StatusUnprocessableEntity)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", user2, protocol.APINotificationStatus{Status: "read"}), http.StatusUnprocessableEntity)
+	MakeRequest(t, livesyncAPI(t, "PUT", "/notifications/status", read2, protocol.APINotificationStatus{IDs: []int64{4}, Status: "read"}), http.StatusForbidden)
+	assert.Equal(t, activities_model.NotificationStatusUnread, status(4))
 }
 
 // livesyncTaskLog makes task's log the DBFS file name with lines, as the

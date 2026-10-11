@@ -225,6 +225,8 @@ type loader struct {
 	comments map[int64]*issues_model.Comment
 	reviews  map[int64]*issues_model.Review
 	releases map[int64]*repo_model.Release
+	// depRoles is each dependency event's side (loadDependencyRoles).
+	depRoles map[int64]string
 	// gitRepos are the git repositories opened for rendering (nil when
 	// one could not be opened); close releases them.
 	gitRepos map[int64]*git.Repository
@@ -254,6 +256,7 @@ func newLoader() *loader {
 		comments: map[int64]*issues_model.Comment{},
 		reviews:  map[int64]*issues_model.Review{},
 		releases: map[int64]*repo_model.Release{},
+		depRoles: map[int64]string{},
 		gitRepos: map[int64]*git.Repository{},
 		envs:     map[int64]string{},
 		commits:  map[int64]map[string]bool{},

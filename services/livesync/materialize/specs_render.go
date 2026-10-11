@@ -5,10 +5,12 @@ package materialize
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	activities_model "forgejo.org/models/activities"
 	"forgejo.org/models/avatars"
+	"forgejo.org/models/db"
 	issues_model "forgejo.org/models/issues"
 	repo_model "forgejo.org/models/repo"
 	user_model "forgejo.org/models/user"
@@ -295,6 +297,9 @@ func commentSpec() *spec {
 			if err := l.loadCommentParents(ctx, rows); err != nil {
 				return err
 			}
+			if err := l.loadDependencyRoles(ctx, rows); err != nil {
+				return err
+			}
 			return issueRepos(ctx, l, ids(rows, func(r *issues_model.Comment) int64 { return r.IssueID }))
 		},
 		place: func(l *loader, r *issues_model.Comment) (string, protocol.Unit) { return l.commentPlace(r) },
@@ -323,8 +328,69 @@ func commentDTO(l *loader, r *issues_model.Comment) *protocol.Comment {
 		RefCommentID: r.RefCommentID, RefAction: int(r.RefAction), RefIsPull: r.RefIsPull,
 		CreatedAt: ts(r.CreatedUnix), UpdatedAt: ts(r.UpdatedUnix),
 	}
+	res.DependencyRole = l.depRoles[r.ID]
 	l.markdown(l.issueRepo(r.IssueID), &res.Body, &res.BodyHTML, &res.BodyTruncated)
 	return res
+}
+
+// isDependencyEvent reports whether a comment is a dependency added or
+// removed.
+func isDependencyEvent(t issues_model.CommentType) bool {
+	return t == issues_model.CommentTypeAddDependency || t == issues_model.CommentTypeRemoveDependency
+}
+
+// loadDependencyRoles decides each dependency event's side (Comment.
+// DependencyRole). Forgejo's createIssueDependencyComment writes the event
+// on the blocked issue, then on the one it depends on, in one transaction:
+// of the pair (same type, each naming the other, created together), the
+// blocked issue's has the lower id.
+func (l *loader) loadDependencyRoles(ctx context.Context, rows []*issues_model.Comment) error {
+	var others []int64
+	for _, r := range rows {
+		if isDependencyEvent(r.Type) && r.DependentIssueID > 0 {
+			others = append(others, r.DependentIssueID)
+		}
+	}
+	if len(others) == 0 {
+		return nil
+	}
+	var pairs []*issues_model.Comment
+	if err := db.GetEngine(ctx).In("issue_id", others).
+		In("type", []issues_model.CommentType{issues_model.CommentTypeAddDependency, issues_model.CommentTypeRemoveDependency}).
+		Find(&pairs); err != nil {
+		return fmt.Errorf("load dependency events: %w", err)
+	}
+	for _, r := range rows {
+		if !isDependencyEvent(r.Type) || r.DependentIssueID <= 0 {
+			continue
+		}
+		var best *issues_model.Comment
+		for _, o := range pairs {
+			d := int64(o.CreatedUnix) - int64(r.CreatedUnix)
+			if o.Type != r.Type || o.IssueID != r.DependentIssueID || o.DependentIssueID != r.IssueID || d < -2 || d > 2 {
+				continue
+			}
+			// The nearest by id (the same dependency may have been added and removed more than once).
+			if best == nil || abs64(o.ID-r.ID) < abs64(best.ID-r.ID) {
+				best = o
+			}
+		}
+		switch {
+		case best == nil:
+		case best.ID > r.ID:
+			l.depRoles[r.ID] = "blocked"
+		default:
+			l.depRoles[r.ID] = "blocks"
+		}
+	}
+	return nil
+}
+
+func abs64(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // reviewState is API v1's name of a review type (convert.ToPullReview).

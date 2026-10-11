@@ -114,7 +114,7 @@ const (
 	SchemaWatch           = 1
 	SchemaStar            = 1
 	SchemaBlockedUser     = 1
-	SchemaComment         = 1
+	SchemaComment         = 2 // 2: dependency_role
 	SchemaReaction        = 1
 	SchemaReview          = 1
 	SchemaReviewVerdict   = 1

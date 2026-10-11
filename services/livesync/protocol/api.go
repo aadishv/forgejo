@@ -45,6 +45,7 @@ package protocol
 //	GET    /-/sync/api/issues/{id}/viewed[?head={sha}]      → 200 APIViewedFiles (a pull request's issue)
 //	PUT    /-/sync/api/issues/{id}/viewed                   APIViewedUpdate → 200 APIViewedFiles (write:repository)
 //	PUT    /-/sync/api/issues/{id}/project                  APIIssueProject → 204              (write:issue)
+//	PUT    /-/sync/api/notifications/status                 APINotificationStatus → 204; 404 when one is another user's (write:notification)
 //	POST   /-/sync/api/markdown                             APIMarkdownRequest → 200 APIMarkdownResponse
 //	POST   /-/sync/api/markup                               APIMarkupRequest → 200 APIMarkupResponse (code unit)
 //	GET    /-/sync/api/repos/{id}/tree/{commit}[/{path}]    → 200 APITree               (immutable)
@@ -145,6 +146,20 @@ type APICardMove struct {
 type APICommentResolved struct {
 	Resolved bool `json:"resolved"`
 }
+
+// APINotificationStatus sets the status ("unread", "read" or "pinned") of
+// the viewer's notifications IDs (1 to APINotificationStatusMax) in one
+// transaction, as API v1's thread PATCH does for one (undoing "Mark all
+// read": exactly the notifications it marked, back to unread). A
+// notification deleted meanwhile is skipped; one of another user is 404
+// (and nothing changes). Idempotent.
+type APINotificationStatus struct {
+	IDs    []int64 `json:"ids"`
+	Status string  `json:"status"`
+}
+
+// APINotificationStatusMax bounds APINotificationStatus.IDs.
+const APINotificationStatusMax = 1000
 
 // APIIssueProject puts an issue on a project's board (in ColumnID, or the
 // project's default column when 0; at the column's end) or, with
