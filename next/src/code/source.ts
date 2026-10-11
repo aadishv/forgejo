@@ -6,7 +6,8 @@
 // trees, blobs, blames and diffs; API v1 for commit lists and compares of
 // full SHAs — so an answer is cached forever (cache.ts) and a cached answer
 // never needs the network: views that were seen once work offline.
-// Highlighting goes to the code worker (Comlink). Diffs are parsed here: the
+// Highlighting goes to the code worker (Comlink; highlighter.ts schedules and
+// watches it). Diffs are parsed here: the
 // parse is a few ms per 5k lines, and a parsed diff (an object per line)
 // coming back from a worker costs the main thread 3-4x that to deserialize.
 //
@@ -14,7 +15,6 @@
 // 'omit'`, no redirects). Only complete 2xx answers are cached (B9: a diff
 // cut by a git failure rejects while being read).
 
-import {type Remote, wrap} from 'comlink';
 import {RequestFailed} from '../app/api.ts';
 import {sitePath} from '../app/config.ts';
 import {appWorkerURL} from '../app/trusted.ts';
@@ -23,9 +23,10 @@ import {
   APIPrefix, type APIBlame, type APICommitActivity, type APIContributors, type APIMarkupRequest, type APIMarkupResponse, type APITree, type APITreeEntry,
 } from '../protocol/types.gen.ts';
 import {netSignal} from '../sync/net.ts';
-import type {CodeWorkerApi, Highlight} from '../workers/code.worker.ts';
+import type {Highlight} from '../workers/code.worker.ts';
 import workerUrl from '../workers/code.worker.ts?worker&url';
 import {CodeCache} from './cache.ts';
+import {Highlighter, type HighlightWorker, type Priority, TimedOut, workerHighlighter} from './highlighter.ts';
 import type {RefKind} from './refs.ts';
 import {type DiffFile, filePath, parseDiff} from './diff.ts';
 import {HIGHLIGHT_MAX_CHARS, type Lang, langOf} from './lang.ts';
@@ -43,23 +44,6 @@ export const MAX_FILE = 4 * 1024 * 1024;
  * times over (the classic UI caps diffs too).
  */
 export const MAX_DIFF = 8 * 1024 * 1024;
-
-/**
- * A highlight running longer than this is stopped (the text stays plain): 4 s
- * plus 2 ms a line, at most 20 s (a 5k-line TypeScript file takes ≈ 7 s in
- * this worker; a runaway grammar spins far longer).
- */
-function highlightLimit(lines: number): number {
-  return Math.min(20_000, 4000 + 2 * lines);
-}
-
-/** A highlight stopped by the watchdog. */
-class TimedOut extends Error {
-  override name = 'TimedOut';
-}
-
-/** Starting the worker and loading a grammar longer than this fails the highlight (not cached: asked again). */
-const PREPARE_LIMIT = 30_000;
 
 /** Content too large to show here (status 413 for the views). */
 export class TooLarge extends RequestFailed {
@@ -180,10 +164,8 @@ function commitInfo(c: ApiCommit): CommitInfo {
 
 export class CodeSource {
   readonly cache: CodeCache;
-  /** The highlighter (stopped and replaced when a highlight runs away or the worker fails). */
-  private highlighter: Highlighter | undefined;
-  /** The highlights waiting their turn (one runs at a time: see watched). */
-  private queue: Promise<unknown> = Promise.resolve();
+  /** The code worker's highlighter (started with the first highlight; one at a time, watched). */
+  private readonly hl: Highlighter;
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly snippets = new Map<string, Promise<Highlight | null>>();
   /** Diffs parsed this session (key → files). */
@@ -194,53 +176,21 @@ export class CodeSource {
   private readonly app: App;
   private readonly s: Session;
 
-  constructor(app: App, s: Session) {
+  constructor(app: App, s: Session, opts: {spawn?: () => HighlightWorker} = {}) {
     this.app = app;
     this.s = s;
     this.cache = new CodeCache(s.data.db);
+    this.hl = new Highlighter(opts.spawn ?? (() => this.spawn()));
     // A repository the viewer may no longer read: its content goes too.
     this.off = s.data.on('revoked', ({group}) => {
       if (group.startsWith('repo:')) void this.cache.purgeRepo(Number(group.slice(5)));
     });
   }
 
-  private spawn(): Highlighter {
+  private spawn(): HighlightWorker {
     const at = workerUrl.indexOf('assets/');
     const url = at >= 0 ? `${this.app.config.base}${workerUrl.slice(at)}` : workerUrl;
-    const w = new Worker(appWorkerURL(this.app.config.base, url), {type: 'module', name: 'code-highlight'});
-    let fail: (err: Error) => void = () => undefined;
-    const failed = new Promise<never>((_, reject) => {
-      fail = reject;
-    });
-    failed.catch(() => undefined);
-    const h: Highlighter = {w, api: wrap<CodeWorkerApi>(w), failed, stop: () => {
-      if (this.highlighter === h) this.highlighter = undefined;
-      w.terminate();
-      fail(new Error('The highlighter stopped.'));
-    }};
-    // A worker that fails to load (a build replaced under the page) never answers: calls fail now, the next starts another.
-    w.addEventListener('error', () => {
-      h.stop();
-    });
-    return h;
-  }
-
-  /**
-   * Runs a highlight with a watchdog: a TextMate grammar can backtrack for
-   * minutes on crafted text (a file in a pull request). Highlights run one at
-   * a time, and the clock starts once the worker and the grammar are ready,
-   * so only tokenizing is timed (not starting Shiki, a slow grammar chunk, or
-   * waiting behind other files). Past HIGHLIGHT_LIMIT the highlighter is
-   * terminated (a new one starts with the next call) and the call rejects
-   * with TimedOut (callers keep the text plain for this session: it would run
-   * away again; not stored, a faster device may manage). A failure (a grammar or the
-   * worker not loading in PREPARE_LIMIT, the worker failing) rejects: not
-   * cached, asked again later.
-   */
-  private watched(lang: Lang, lines: number, run: (api: Remote<CodeWorkerApi>) => Promise<Highlight | null>): Promise<Highlight | null> {
-    const p = this.queue.then(() => this.watchedNow(lang, lines, run));
-    this.queue = p.catch(() => undefined);
-    return p;
+    return workerHighlighter(new Worker(appWorkerURL(this.app.config.base, url), {type: 'module', name: 'code-highlight'}));
   }
 
   /**
@@ -248,53 +198,15 @@ export class CodeSource {
    * whose rendering is on its way) does not wait for it afterwards.
    */
   preheat(): void {
-    this.highlighter ??= this.spawn();
+    this.hl.preheat();
   }
 
   /**
-   * Loads a grammar into the highlighter, in the queue: its chunk is then in
-   * the service worker's cache (grammars are cached on first use), so a
-   * prefetched pull request is highlighted offline too.
+   * Loads a grammar into the highlighter, when it is idle: its chunk is then in the service worker's cache
+   * (grammars are cached on first use), so a prefetched pull request is highlighted offline too.
    */
   warm(lang: Lang): Promise<void> {
-    const p = this.queue.then(async () => {
-      this.highlighter ??= this.spawn();
-      const h = this.highlighter;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([h.api.prepare(lang), h.failed, new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, PREPARE_LIMIT);
-        })]);
-      } finally {
-        clearTimeout(timer);
-      }
-    });
-    this.queue = p.catch(() => undefined);
-    return p;
-  }
-
-  private async watchedNow(lang: Lang, lines: number, run: (api: Remote<CodeWorkerApi>) => Promise<Highlight | null>): Promise<Highlight | null> {
-    this.highlighter ??= this.spawn();
-    const h = this.highlighter;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const after = <T>(ms: number, v: T) => new Promise<T>((resolve) => {
-      timer = setTimeout(() => {
-        resolve(v);
-      }, ms);
-    });
-    try {
-      if (await Promise.race([h.api.prepare(lang), h.failed, after(PREPARE_LIMIT, 'timeout' as const)]) === 'timeout') {
-        h.stop();
-        throw new Error('The highlighter did not start.');
-      }
-      clearTimeout(timer);
-      const r = await Promise.race([run(h.api), h.failed, after(highlightLimit(lines), 'timeout' as const)]);
-      if (r !== 'timeout') return r;
-      h.stop();
-      throw new TimedOut('The highlight took too long.');
-    } finally {
-      clearTimeout(timer);
-    }
+    return this.hl.warm(lang);
   }
 
   /**
@@ -462,7 +374,7 @@ export class CodeSource {
     if (!file || !lang) return null;
     let h: Highlight | null;
     try {
-      h = await this.watched(lang, file.lines.length, (api) => api.highlightDiffFile(file));
+      h = await this.hl.highlight(lang, (api) => api.highlightDiffFile(file));
     } catch (err) {
       if (!(err instanceof TimedOut)) throw err;
       h = null;
@@ -481,19 +393,34 @@ export class CodeSource {
     return this.cache.peek(CodeSource.diffHlKey(repoId, base, head, index));
   }
 
-  /** A file's highlighting, cached by blob SHA (null: plain). */
-  highlight(repoId: number, blobSha: string, path: string, text: string): Promise<Highlight | null> {
+  static highlightKey(repoId: number, blobSha: string, lang: Lang): string {
+    return `hl:${String(repoId)}:${blobSha}:${lang}`;
+  }
+
+  /**
+   * A file's highlighting, cached by blob SHA (null: plain). Priority "idle": an intent (a hovered file), run when
+   * nothing on screen waits; a view asking for the same file later promotes it.
+   */
+  highlight(repoId: number, blobSha: string, path: string, text: string, priority: Priority = 'now'): Promise<Highlight | null> {
     const lang = langOf(path);
     if (!lang || text.length > HIGHLIGHT_MAX_CHARS) return Promise.resolve(null);
-    const key = `hl:${String(repoId)}:${blobSha}:${lang}`;
-    let lines = 1;
-    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) lines++;
-    return this.cached(key, () => this.watched(lang, lines, (api) => api.highlight(text, lang))).catch((err: unknown) => {
+    const key = CodeSource.highlightKey(repoId, blobSha, lang);
+    if (priority === 'now') this.hl.promote(key);
+    return this.cached(key, () => this.hl.highlight(lang, (api) => api.highlight(text, lang), {priority, key})).catch((err: unknown) => {
       if (!(err instanceof TimedOut)) throw err;
       // Plain for this session (it would run away again), not stored.
       this.cache.remember(key, null);
       return null;
     });
+  }
+
+  /**
+   * Reads a file's stored highlighting into memory (IndexedDB only, no worker): a file view loads it with the file,
+   * so a file highlighted on an earlier visit paints highlighted in its first frame (peekHighlight).
+   */
+  async loadHighlight(repoId: number, blobSha: string, path: string): Promise<void> {
+    const lang = langOf(path);
+    if (lang) await this.cache.get(CodeSource.highlightKey(repoId, blobSha, lang));
   }
 
   /** A snippet (a fenced code block of an issue) highlighted, kept in memory for the session (null: plain). */
@@ -502,9 +429,7 @@ export class CodeSource {
     const key = `snip:${lang}:${text}`;
     const hit = this.snippets.get(key);
     if (hit) return hit;
-    let lines = 1;
-    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) lines++;
-    const p = this.watched(lang, lines, (api) => api.highlight(text, lang)).catch(() => null);
+    const p = this.hl.highlight(lang, (api) => api.highlight(text, lang)).catch(() => null);
     this.snippets.set(key, p);
     // A few hundred blocks at most (each key holds its text).
     for (const k of this.snippets.keys()) {
@@ -518,7 +443,7 @@ export class CodeSource {
   peekHighlight(repoId: number, blobSha: string, path: string): Highlight | null | undefined {
     const lang = langOf(path);
     if (!lang) return null;
-    return this.cache.peek(`hl:${String(repoId)}:${blobSha}:${lang}`);
+    return this.cache.peek(CodeSource.highlightKey(repoId, blobSha, lang));
   }
 
   /**
@@ -639,16 +564,8 @@ export class CodeSource {
   close(): void {
     this.off();
     this.cache.close();
-    this.highlighter?.stop();
+    this.hl.close();
   }
-}
-
-interface Highlighter {
-  w: Worker;
-  api: Remote<CodeWorkerApi>;
-  /** Rejects when the worker fails or is stopped. */
-  failed: Promise<never>;
-  stop: () => void;
 }
 
 const sources = new WeakMap<Session, CodeSource>();
