@@ -16,6 +16,7 @@ import {canWrite, repoAccess, useConfirmAccess} from '../../app/access.ts';
 import {CLASSIC_HINT, classicHref} from '../../app/classic.ts';
 import {ClassicMenuItem} from '../../app/ClassicMenuItem.tsx';
 import {Missing} from '../../app/Missing.tsx';
+import {ISSUE_SECTIONS} from '../../app/paths.ts';
 import {classicOfHere} from '../../app/session.ts';
 import {type RepoMatch, repoGone, useHold} from '../../app/repo.ts';
 import {PageHeader} from '../../app/shell/PageHeader.tsx';
@@ -154,6 +155,8 @@ export function tabOfPath(path: string): Tab {
   if (segs.length < 2) return undefined;
   const kind = segs[2];
   if (kind === undefined) return 'code';
+  // Labels and milestones are the Issues tab's (GitHub's).
+  if (ISSUE_SECTIONS.has(kind)) return 'issues';
   return kind === 'issues' || kind === 'pulls' ? kind : undefined;
 }
 

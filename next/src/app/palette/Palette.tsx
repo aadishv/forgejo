@@ -316,7 +316,8 @@ function PaletteBody({app, onChoose}: {app: App; onChoose: () => void}) {
       add('Milestones', best(milestones.map((m) => m.score)) + NAMED_BONUS, milestones.map(({item: m, repo}) => ({
         value: `milestone:${String(m.id)}`, icon: Milestone, meta: repo?.full_name, label: m.title,
         run: () => {
-          if (repo) void navigate({to: '/$owner/$repo/issues', params: {owner: repo.owner_name, repo: repo.name}, search: {milestone: m.id, state: 'all'}});
+          // The milestone's page: its progress and its issues and pull requests.
+          if (repo) void navigate({to: '/$owner/$repo/milestone/$index', params: {owner: repo.owner_name, repo: repo.name, index: String(m.id)}});
         },
       })));
       const people = untracked(() => searchPeople(pool, words));

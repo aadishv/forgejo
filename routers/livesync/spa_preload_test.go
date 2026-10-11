@@ -23,6 +23,11 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/projects/4":                 "src/features/board/BoardView.tsx",
 		"/-/next/code/acme/atlas/src/main/-": "src/features/code/CodePage.tsx",
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
+		"/acme/atlas/labels":                 "src/features/meta/LabelsPage.tsx",
+		"/acme/atlas/milestones":             "src/features/meta/MilestonesPage.tsx",
+		"/acme/atlas/milestones/new":         "src/features/meta/MilestoneForm.tsx",
+		"/acme/atlas/milestone/3":            "src/features/meta/MilestonePage.tsx",
+		"/acme/atlas/milestone/3/edit":       "src/features/meta/MilestoneForm.tsx",
 	} {
 		got := routeModules(p)
 		if assert.NotEmpty(t, got, p) {
@@ -31,6 +36,8 @@ func TestRouteModules(t *testing.T) {
 	}
 	assert.Nil(t, routeModules("/-/next/"))
 	assert.Nil(t, routeModules("/acme/atlas/wiki/x"))
+	assert.Nil(t, routeModules("/acme/atlas/milestone/3/x"))
+	assert.Nil(t, routeModules("/acme/atlas/labels/x"))
 }
 
 func TestPreloadHeaders(t *testing.T) {

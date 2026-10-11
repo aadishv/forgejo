@@ -63,6 +63,11 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "issues", "{temp}"},
 	{"{owner}", "{repo}", "pulls"},
 	{"{owner}", "{repo}", "pulls", "{index}"},
+	{"{owner}", "{repo}", "labels"},     // the repository's labels
+	{"{owner}", "{repo}", "milestones"}, // its milestones (open, closed)
+	{"{owner}", "{repo}", "milestones", "new"},
+	{"{owner}", "{repo}", "milestone", "{index}"}, // a milestone and its issues
+	{"{owner}", "{repo}", "milestone", "{index}", "edit"},
 	{"{owner}", "{repo}", "{code}"}, // a code address (codeAddress); the app opens its code view for it
 }
 

@@ -42,6 +42,10 @@
   --color-fg-muted: #4f4f59;
   --color-fg-subtle: #64646f;
   --color-fg-on-accent: #fff; /* on accent and danger-solid fills */
+  /* Text on a label's own colour (a filled label pill): the one of the two that contrasts more with that colour
+   * (ui/ink.ts labelInk, whose luminances match these). The same in both themes: the fill is the label's. */
+  --color-on-label-dark: #1b1b1f;
+  --color-on-label-light: #fff;
 
   /* The one accent: a fill (+ hover), a text colour and a subtle tint. */
   --color-accent: #5e6ad2;
@@ -258,6 +262,8 @@
   --color-fg-muted: #a3a4ac;
   --color-fg-subtle: #999aa2;
   --color-fg-on-accent: #fff;
+  --color-on-label-dark: #1b1b1f;
+  --color-on-label-light: #fff;
   --color-accent: #5e6ad2;
   --color-accent-hover: #535fc4;
   --color-accent-fg: #9aa2f0;

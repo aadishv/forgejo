@@ -6,7 +6,9 @@
 
 export {AsideLink, AsideLinks, AsideSection, percent, ShareBar, type Share, type ShareTone} from './Aside.tsx';
 export {Avatar, AvatarGroup} from './Avatar.tsx';
-export {Badge, ChipButton, LabelChip, LabelDot, LabelIcon, type BadgeTone} from './Badge.tsx';
+export {Badge, ChipButton, LabelChip, LabelDot, LabelIcon, LabelPill, type BadgeTone} from './Badge.tsx';
+export {ColorPicker} from './ColorPicker.tsx';
+export {ProgressBar} from './Progress.tsx';
 export {Button, IconButton, type ButtonVariant} from './Button.tsx';
 export {Callout, type CalloutTone} from './Callout.tsx';
 export {Card, Panel} from './Card.tsx';
@@ -18,7 +20,7 @@ export {Dialog, DialogClose, DialogTrigger} from './Dialog.tsx';
 export {EmptyState} from './EmptyState.tsx';
 export {Entry, EntryList} from './Entry.tsx';
 export {Hint, Icon, type LucideIcon} from './Icon.tsx';
-export {Checkbox, EditableHeading, EditorFrame, Input, TextArea, TitleInput} from './Input.tsx';
+export {Checkbox, EditableHeading, EditorFrame, Field, Input, TextArea, TitleInput} from './Input.tsx';
 export {Kbd, Shortcut} from './Kbd.tsx';
 export {ListGroupHeader, ListRow} from './ListRow.tsx';
 export {NavGroup, NavHeading, NavItem} from './NavItem.tsx';

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {expect, test} from 'vitest';
-import {appPageOf, classicOfLocation, classicPathOf, isCanonical, nextPathOf, repoOfPath} from './paths.ts';
+import {appPageOf, classicOfLocation, classicPathOf, isCanonical, isListPath, nextPathOf, repoOfPath} from './paths.ts';
 
 test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/')).toBe('/');
@@ -22,6 +22,13 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/compare/feature')).toBe('/-/next/code/acme/atlas/compare/feature/-');
   expect(nextPathOf('/acme/atlas/compare')).toBe('/-/next/code/acme/atlas/compare/-');
   expect(nextPathOf('/acme/atlas/compare/main..feature')).toBeUndefined();
+  // Labels and milestones.
+  expect(nextPathOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
+  expect(nextPathOf('/acme/atlas/milestones')).toBe('/acme/atlas/milestones');
+  expect(nextPathOf('/acme/atlas/milestones/new')).toBe('/acme/atlas/milestones/new');
+  expect(nextPathOf('/acme/atlas/milestone/7')).toBe('/acme/atlas/milestone/7');
+  expect(nextPathOf('/acme/atlas/milestone/7/edit')).toBe('/acme/atlas/milestone/7/edit');
+  for (const p of ['/acme/atlas/labels/x', '/acme/atlas/milestone/0', '/acme/atlas/milestone/7/close', '/acme/atlas/milestones/7']) expect(nextPathOf(p), p).toBeUndefined();
   // Forgejo's own pages and what the app does not render stay classic.
   for (const p of ['/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
@@ -48,6 +55,10 @@ test('canonical routes and the repository of a route', () => {
   expect(isCanonical('/acme/atlas', '?ui=classic')).toBe(false);
   expect(repoOfPath('/acme/Atlas/issues/3')).toBe('acme/atlas');
   expect(repoOfPath('/-/next/code/acme/atlas/src/-')).toBe('acme/atlas');
+  expect(repoOfPath('/acme/atlas/milestone/2')).toBe('acme/atlas');
+  expect(repoOfPath('/acme/atlas/labels')).toBe('acme/atlas');
+  expect(isListPath('/acme/atlas/milestone/2')).toBe(true);
+  expect(isListPath('/acme/atlas/milestones')).toBe(false);
   expect(repoOfPath('/notifications')).toBeUndefined();
   expect(repoOfPath('/user/settings')).toBeUndefined();
 });
@@ -73,9 +84,18 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
   for (const p of ['/explore/repos', '/user/settings', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
   // A repository's classic-only pages: the nearest page of the app, never Home.
-  for (const p of ['/acme/atlas/settings', '/acme/atlas/milestones', '/acme/atlas/wiki/Home', '/acme/atlas/activity', '/acme/atlas/stars', '/acme/atlas/labels']) {
+  for (const p of ['/acme/atlas/settings', '/acme/atlas/wiki/Home', '/acme/atlas/activity', '/acme/atlas/stars']) {
     expect(appPageOf(p), p).toBe('/acme/atlas');
   }
+  // Labels and milestones are the app's pages; their other classic addresses the nearest one.
+  expect(appPageOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
+  expect(appPageOf('/acme/atlas/milestones?state=closed')).toBe('/acme/atlas/milestones?state=closed');
+  expect(appPageOf('/acme/atlas/milestones/new?x=1')).toBe('/acme/atlas/milestones/new');
+  expect(appPageOf('/acme/atlas/milestone/4?state=closed')).toBe('/acme/atlas/milestone/4?state=closed');
+  expect(appPageOf('/acme/atlas/milestone/4/edit')).toBe('/acme/atlas/milestone/4/edit');
+  expect(appPageOf('/acme/atlas/milestones/new')).toBe('/acme/atlas/milestones/new');
+  expect(appPageOf('/acme/atlas/milestone/4/close')).toBe('/acme/atlas/milestones');
+  expect(appPageOf('/acme/atlas/labels/edit')).toBe('/acme/atlas/labels');
   expect(appPageOf('/acme/atlas/releases/tag/v0.2.0')).toBe('/-/next/code/acme/atlas/releases/-');
   expect(appPageOf('/acme/atlas/projects')).toBe('/-/next/boards');
   expect(appPageOf('/acme/atlas/issues/new')).toBe('/acme/atlas/issues');

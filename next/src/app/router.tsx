@@ -28,7 +28,8 @@ import {lazyView, whenIdle} from './lazy.tsx';
 import {RouteError, RouteNotFound, ShellNotFound} from './RouteStatus.tsx';
 import {loadRepo, repoFullName, type RepoMatch} from './repo.ts';
 import {
-  type InboxSearch, inboxSearch, type IssueListSearch, issueListSearch, type MyListSearch, myListSearch, parsePlainSearch, type PullSearch, pullSearch,
+  type InboxSearch, inboxSearch, type IssueListSearch, issueListSearch, type LabelsSearch, labelsSearch, type MilestonesSearch, milestonesSearch, type MyListSearch,
+  myListSearch, parsePlainSearch, type PullSearch, pullSearch,
 } from './search.ts';
 import {PAGE_SCROLLER} from './shell/Frame.tsx';
 import {Shell} from './shell/Shell.tsx';
@@ -192,6 +193,50 @@ const repoPullRoute = createRoute({
   component: lazyView(() => import('../features/issue/IssueView.tsx'), 'IssueView'),
 });
 
+// A repository's labels and milestones (features/meta): computed from the pool, written online.
+const repoLabelsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/labels',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  validateSearch: (s): LabelsSearch => labelsSearch(s),
+  staticData: {skeleton: 'list'},
+  component: lazyView(() => import('../features/meta/LabelsPage.tsx'), 'LabelsPage'),
+});
+
+const repoMilestonesRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/milestones',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  validateSearch: (s): MilestonesSearch => milestonesSearch(s),
+  staticData: {skeleton: 'list'},
+  component: lazyView(() => import('../features/meta/MilestonesPage.tsx'), 'MilestonesPage'),
+});
+
+const repoMilestoneNewRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/milestones/new',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/meta/MilestoneForm.tsx'), 'NewMilestone'),
+});
+
+const repoMilestoneRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/milestone/$index',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  validateSearch: (s): IssueListSearch => issueListSearch(s),
+  staticData: {skeleton: 'list'},
+  component: lazyView(() => import('../features/meta/MilestonePage.tsx'), 'MilestonePage'),
+});
+
+const repoMilestoneEditRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/milestone/$index/edit',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/meta/MilestoneForm.tsx'), 'EditMilestone'),
+});
+
 // The UI's own pages inside the shell (no canonical Forgejo URL serves them yet: B8's spaRoutes would need
 // `/{owner}/{repo}/projects/{id}` etc., a backend change; below the base they reload into the app anyway).
 const boardsRoute = createRoute({
@@ -299,7 +344,8 @@ const routeTree = rootRoute.addChildren([
   callbackRoute,
   shellRoute.addChildren([
     baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
-    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
+    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute,
+    repoLabelsRoute, repoMilestonesRoute, repoMilestoneNewRoute, repoMilestoneRoute, repoMilestoneEditRoute, boardsRoute, boardRoute, codeRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
   ...devRoutes,
@@ -384,6 +430,9 @@ export const ROUTES = {
   repoPulls: repoPullsRoute.id,
   repoIssue: repoIssueRoute.id,
   repoPull: repoPullRoute.id,
+  repoLabels: repoLabelsRoute.id,
+  repoMilestones: repoMilestonesRoute.id,
+  repoMilestone: repoMilestoneRoute.id,
   myIssues: myIssuesRoute.id,
   myPulls: myPullsRoute.id,
   code: codeRoute.id,

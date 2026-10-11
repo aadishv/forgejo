@@ -28,6 +28,8 @@ describe('tabOfPath', () => {
     expect(tabOfPath('/acme/website/pulls')).toBe('pulls');
     expect(tabOfPath('/-/next/code/acme/website/actions/-')).toBe('actions');
     expect(tabOfPath('/-/next/code/acme/website/actions/runs/4/-')).toBe('actions');
+    // Labels and milestones belong to Issues (GitHub's).
+    for (const p of ['/acme/website/labels', '/acme/website/milestones', '/acme/website/milestone/3', '/acme/website/milestones/new']) expect(tabOfPath(p), p).toBe('issues');
   });
 
   test('anything else is no tab', () => {
