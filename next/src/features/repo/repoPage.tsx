@@ -134,7 +134,7 @@ export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle
   );
 }
 
-type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | undefined;
+type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | 'wiki' | undefined;
 
 /**
  * The code views that are the Code tab, as GitHub's Code tab stays selected on a repository's files, history,
@@ -154,7 +154,7 @@ export function tabOfPath(path: string): Tab {
   if (segs.length < 2) return undefined;
   const kind = segs[2];
   if (kind === undefined) return 'code';
-  return kind === 'issues' || kind === 'pulls' || kind === 'activity' ? kind : undefined;
+  return kind === 'issues' || kind === 'pulls' || kind === 'activity' || kind === 'wiki' ? kind : undefined;
 }
 
 /** One of the repository's tabs: in the bar, and the same entry as a row of "More" when the bar is too narrow. */
@@ -226,7 +226,11 @@ export const RepoTabs = observer(function RepoTabs({owner, repo, repoId}: {owner
       item: <MenuItem icon={CirclePlay} onSelect={() => void navigate(code)}>Actions</MenuItem>,
     },
     projects,
-    classic('wiki', `${base}/wiki`, BookOpen, 'Wiki'),
+    {
+      key: 'wiki',
+      tab: <TabLink><Link to="/$owner/$repo/wiki" params={{owner, repo}} {...cur('wiki')}><Icon icon={BookOpen} size="sm"/>Wiki</Link></TabLink>,
+      item: <MenuItem icon={BookOpen} onSelect={() => void navigate({to: '/$owner/$repo/wiki', params: {owner, repo}})}>Wiki</MenuItem>,
+    },
     {
       key: 'activity',
       // Every activity page (the Pulse of any period, the graphs) is this tab.

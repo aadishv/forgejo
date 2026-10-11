@@ -145,7 +145,24 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/pulls/2/files":                                   true,
 		"/user2/repo1/pulls/2/checks":                                  false,
 		"/user2/repo1/src/branch/master/../../settings":                false,
-		"/user2/repo1/wiki":                                            false,
+		// The wiki (its page addresses; the classic wiki's raw files and search stay classic).
+		"/user2/repo1/wiki":                     true,
+		"/user2/repo1/wiki/":                    true,
+		"/user2/repo1/wiki/Home":                true,
+		"/user2/repo1/wiki/Getting-Started.-":   true,
+		"/user2/repo1/wiki/-/pages":             true,
+		"/user2/repo1/wiki/-/new":               true,
+		"/user2/repo1/wiki/Home/-/edit":         true,
+		"/user2/repo1/wiki/-/history":           false,
+		"/user2/repo1/wiki/Home/-/delete":       false,
+		"/user2/repo1/wiki/raw":                 false,
+		"/user2/repo1/wiki/raw/logo.png":        false,
+		"/user2/repo1/wiki/search":              false,
+		"/user2/repo1/wiki/_pages":              false,
+		"/user2/repo1/wiki/..":                  false,
+		"/user2/repo1/wiki/commit/65f1bf27bc3b": false,
+		"/user2/repo1/wiki/a/b":                 false,
+		"/user2/repo1.wiki/wiki/Home":           false,
 		// The activity pages.
 		"/user2/repo1/activity":                   true,
 		"/user2/repo1/activity/monthly":           true,
@@ -270,7 +287,11 @@ func TestSPAServing(t *testing.T) {
 			}
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2/repo1", opted...).Code, "a repository's home")
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2?tab=repositories", opted...).Code, "an owner's page")
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic"} {
+			for _, p := range []string{"/user2/repo1/wiki", "/user2/repo1/wiki/?action=_pages", "/user2/repo1/wiki/Home?action=_edit", "/user2/repo1/wiki/-/pages"} {
+				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
+			}
+			// A wiki page's revisions are the classic page's.
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)
