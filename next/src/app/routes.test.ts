@@ -51,7 +51,7 @@ test('every canonical route of the app is a server spaRoute', () => {
 
 test('sample URLs match a page (not the root\'s not-found)', () => {
   const r = router();
-  for (const path of ['/', '/notifications', '/issues', '/pulls', '/acme/web.site', '/-/next/acme', '/-/next/acme/web.site', '/-/next/acme/web.site/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/-/next/', '/-/next/callback', '/acme/web.site/wiki', '/acme/web.site/wiki/', '/acme/web.site/wiki/Home', '/acme/web.site/wiki/-/pages', '/acme/web.site/wiki/-/new', '/acme/web.site/wiki/Home/-/edit']) {
+  for (const path of ['/', '/notifications', '/issues', '/pulls', '/acme/web.site', '/-/next/acme', '/-/next/acme/web.site', '/-/next/acme/web.site/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/-/next/', '/-/next/callback', '/acme/web.site/wiki', '/acme/web.site/wiki/', '/acme/web.site/wiki/Home', '/acme/web.site/wiki/-/pages', '/acme/web.site/wiki/-/new', '/acme/web.site/wiki/Home/-/edit', '/user/settings', '/user/settings/keys', '/user/settings/account', '/user/settings/appearance']) {
     const matches = r.matchRoutes(path, {});
     const leaf = matches.at(-1);
     expect(leaf?.routeId, path).not.toBe('__root__');
@@ -108,4 +108,17 @@ test('a repository page\'s skeleton has its header\'s rows (RepoHeader): breadcr
   }
   // Every page outside a repository: one row.
   for (const r of routes.filter((x) => !repoPages.includes(x))) expect(r.options.staticData?.header, r.fullPath).toBeUndefined();
+});
+
+test('the settings pages are their own routes, never an owner\'s repository (`user` is reserved)', () => {
+  const r = router();
+  const leaf = (path: string) => r.matchRoutes(path, {}).at(-1)?.routeId;
+  expect(leaf('/user/settings')).toBe('/shell/user/settings');
+  expect(leaf('/user/settings/')).toBe('/shell/user/settings');
+  expect(leaf('/user/settings/account')).toBe('/shell/user/settings/account');
+  expect(leaf('/user/settings/appearance')).toBe('/shell/user/settings/appearance');
+  expect(leaf('/user/settings/keys')).toBe('/shell/user/settings/keys');
+  // A classic settings page is no repository page of an owner "user" (the shell's not-found, with the classic page).
+  expect(leaf('/user/settings/applications')).toBe('/shell/$');
+  expect(leaf('/acme/settings')).toBe('/shell/$owner/$repo');
 });

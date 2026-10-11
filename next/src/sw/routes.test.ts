@@ -21,6 +21,10 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/acme/repo/activity/hourly', '/acme/repo/activity/contributors/data', '/acme/repo/activity/weekly/x', '/acme/repo/activity_author_data']) {
     expect(isSpaRoute(p), p).toBe(false);
   }
+  // The viewer's settings: four pages of the app, the rest classic.
+  for (const p of ['/user/settings', '/user/settings/', '/user/settings/account', '/user/settings/appearance', '/user/settings/keys']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/user', '/user/settings/applications', '/user/settings/security', '/user/settings/keys/1', '/user/settingsx', '/user/login']) expect(isSpaRoute(p), p).toBe(false);
+  expect(isSpaRoute('/user/settings', '?ui=classic')).toBe(false);
   // The classic page asked for by name, and an owner's profile tabs, are classic.
   expect(isSpaRoute('/acme/repo/issues', '?ui=classic')).toBe(false);
   expect(isSpaRoute('/acme', '?tab=activity')).toBe(false);

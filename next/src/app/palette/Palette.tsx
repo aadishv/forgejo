@@ -8,7 +8,7 @@
 import {useNavigate} from '@tanstack/react-router';
 import {
   AppWindow, BookMarked, BookPlus, Building2, CircleCheck, CloudUpload, Code2, CircleDot, Compass, FileCode, GitPullRequest, GitPullRequestClosed, CornerDownRight, Globe, Home,
-  Inbox, KanbanSquare, Layers, Keyboard, LogOut, Milestone, Monitor, Moon, PanelLeft, Settings, SquarePen, Sun, SunMoon, User,
+  Inbox, KanbanSquare, KeyRound, Layers, Keyboard, LogOut, Mail, Milestone, Monitor, Moon, Palette as PaletteIcon, PanelLeft, Settings, SquarePen, Sun, SunMoon, User,
 } from 'lucide-react';
 import {runInAction, untracked} from 'mobx';
 import {type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState} from 'react';
@@ -89,7 +89,10 @@ const COMMANDS: PaletteCommand[] = [
     const login = app.session?.data.pool.model('User').get(app.session.userId)?.get('login');
     if (login) void nav({to: '/$owner', params: {owner: login}});
   }},
-  {id: 'settings', label: 'Settings', icon: Settings, keywords: 'preferences account ssh keys password classic', classic: '/user/settings', run: () => undefined},
+  {id: 'settings', label: 'Settings', icon: Settings, keywords: 'preferences profile account', run: (_, nav) => void nav({to: '/user/settings'})},
+  {id: 'settings-account', label: 'Settings: Email addresses', icon: Mail, keywords: 'account emails password', run: (_, nav) => void nav({to: '/user/settings/account'})},
+  {id: 'settings-appearance', label: 'Settings: Appearance', icon: PaletteIcon, keywords: 'theme language diff', run: (_, nav) => void nav({to: '/user/settings/appearance'})},
+  {id: 'settings-keys', label: 'Settings: SSH and GPG keys', icon: KeyRound, keywords: 'ssh gpg keys', run: (_, nav) => void nav({to: '/user/settings/keys'})},
   {id: 'new-repo', label: 'New repository', icon: BookPlus, keywords: 'create repo classic', classic: '/repo/create', run: () => undefined},
   {id: 'new-org', label: 'New organization', icon: Building2, keywords: 'create org team classic', classic: '/org/create', run: () => undefined},
   {id: 'explore', label: 'Explore repositories, people and organizations', icon: Compass, keywords: 'explore discover browse find public classic', classic: '/explore/repos', run: () => undefined},

@@ -34,7 +34,7 @@ export const AccountMenuReal = observer(function AccountMenuReal({trigger, defau
       <MenuTrigger asChild>{trigger}</MenuTrigger>
       <MenuContent>
         {login && <MenuItem icon={User} onSelect={() => void navigate({to: '/$owner', params: {owner: login}})}>Your profile and repositories</MenuItem>}
-        <ClassicMenuItem to="/user/settings" icon={Settings}>Settings</ClassicMenuItem>
+        <MenuItem icon={Settings} onSelect={() => void navigate({to: '/user/settings'})}>Settings</MenuItem>
         <ClassicMenuItem to="/repo/create" icon={BookPlus}>New repository</ClassicMenuItem>
         <ClassicMenuItem to="/org/create" icon={Building2}>New organization</ClassicMenuItem>
         <MenuSeparator/>

@@ -16,7 +16,7 @@
 
 import {END, parseCodePath} from '../code/refs.ts';
 import {classicWikiPath, parseWikiRest, wikiActionView, wikiPath} from '../features/wiki/paths.ts';
-import {isOwnerName, isSpaRoute, NAME} from '../sw/routes.ts';
+import {isOwnerName, isSpaRoute, NAME, USER_SETTINGS_PAGES} from '../sw/routes.ts';
 
 export {isOwnerName};
 
@@ -51,6 +51,12 @@ export function nextPathOf(path: string): string | undefined {
   if (segs.length === 1) {
     if (a === 'notifications' || a === 'issues' || a === 'pulls') return `/${a}`;
     return isOwnerName(a) ? `/${enc(a)}` : undefined;
+  }
+  // The viewer's settings: the pages the app has (features/usersettings); the others are classic.
+  if (a === 'user') {
+    if (b !== 'settings' || rest.length > 0) return undefined;
+    if (c === undefined) return '/user/settings';
+    return USER_SETTINGS_PAGES.has(c) ? `/user/settings/${c}` : undefined;
   }
   // Boards: /{owner}/{repo}/projects/{id}, /{org}/-/projects/{id}, /{user}/-/projects/{id}.
   if (segs.length === 4 && c === 'projects' && /^[1-9]\d{0,15}$/.test(rest[0] ?? '') && isOwnerName(a)) return `/-/next/projects/${rest[0] ?? ''}`;
@@ -115,6 +121,8 @@ export function appPageOf(classic: string): string {
 function nearestAppPage(path: string): string | undefined {
   if (/%(?:2e|2f|5c)/i.test(path)) return undefined;
   const [a = '', b = '', c] = segments(path);
+  // Another settings page (applications, security, …): the app's settings.
+  if (a === 'user' && b === 'settings') return '/user/settings';
   if (!isOwnerName(a) || !NAME.test(b) || b === '-') return undefined;
   if (c === 'releases' || c === 'tags') return codePath(a, b, c);
   if (c === 'projects') return '/-/next/boards';

@@ -230,7 +230,7 @@ const wikiHomeRoute = createRoute({
     wikiAction(app, location);
   },
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, 'Home'),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: wikiView('WikiHome'),
 });
 
@@ -241,7 +241,7 @@ const wikiPageRoute = createRoute({
     wikiAction(app, location);
   },
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, params.page),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: wikiView('WikiPageView'),
 });
 
@@ -249,7 +249,7 @@ const wikiPagesRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/wiki/-/pages',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, undefined),
-  staticData: {skeleton: 'list'},
+  staticData: {skeleton: 'list', header: 'toolbar'},
   component: wikiView('WikiPages'),
 });
 
@@ -259,7 +259,7 @@ const wikiNewRoute = createRoute({
   // `title`: the page to create (a link to a page that does not exist yet).
   validateSearch: (s): {title?: string} => (typeof s.title === 'string' && s.title ? {title: s.title} : {}),
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, undefined),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: wikiView('WikiNew'),
 });
 
@@ -267,7 +267,7 @@ const wikiEditRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/wiki/$page/-/edit',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, params.page),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: wikiView('WikiEdit'),
 });
 
@@ -314,6 +314,61 @@ const repoRecentCommitsRoute = createRoute({
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
   staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityRecentCommits'),
+});
+
+// The viewer's settings (the classic /user/settings pages, laid out like GitHub's: a side list of its pages beside
+// the page): the profile, the account's email addresses, the appearance, SSH and GPG keys; the side list links the
+// other pages to the classic UI. "user" is a name Forgejo reserves, so these never read as an owner and a
+// repository. The loader starts fetching what the page shows, so a hovered link has it in memory when clicked.
+type SettingsKind = 'settings' | 'emails' | 'keys' | 'gpg' | 'options';
+
+function settingsLoader(app: App, kinds: SettingsKind[]): void {
+  void import('../features/usersettings/data.ts').then((m) => {
+    m.settingsSource(app)?.prefetch(...kinds);
+  }, () => undefined);
+}
+
+const settingsView = (name: 'SettingsProfile' | 'SettingsAccount' | 'SettingsAppearance' | 'SettingsKeys') =>
+  lazyView(() => import('../features/usersettings/UserSettings.tsx'), name);
+
+const settingsProfileRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsProfile'),
+});
+
+const settingsAccountRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/account',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['emails']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAccount'),
+});
+
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/appearance',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings', 'options']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAppearance'),
+});
+
+const settingsKeysRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/keys',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['keys', 'gpg']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsKeys'),
 });
 
 // The UI's own pages inside the shell (no canonical Forgejo URL serves them yet: B8's spaRoutes would need
@@ -426,6 +481,7 @@ const routeTree = rootRoute.addChildren([
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,
+    settingsProfileRoute, settingsAccountRoute, settingsAppearanceRoute, settingsKeysRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
   ...devRoutes,
