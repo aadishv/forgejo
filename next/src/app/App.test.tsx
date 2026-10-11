@@ -392,6 +392,26 @@ describe('signed in', () => {
     expect(router.history.length).toBe(1);
   });
 
+  test('the sync indicator: nothing to see while live and up to date, the badge once something waits', async () => {
+    const s = signedIn();
+    const {app} = await renderApp('/', s);
+    expect(screen.getByRole('status').textContent).toBe('Live');
+    expect(screen.queryByRole('button', {name: /show unsynced changes/})).toBeNull();
+    act(() => {
+      runInAction(() => {
+        app.ui.pendingIntents = 1;
+      });
+    });
+    expect(screen.getByRole('button', {name: /show unsynced changes/}).textContent).toBe('Live· 1 pending');
+    act(() => {
+      runInAction(() => {
+        app.ui.pendingIntents = 0;
+        s.data.status.connection = 'catching_up';
+      });
+    });
+    expect(screen.getByRole('button', {name: /show unsynced changes/}).textContent).toBe('Catching up');
+  });
+
   test('the sync indicator: offline with pending intents, signed out with a sign-in button', async () => {
     const s = signedIn();
     const {app} = await renderApp('/', s, config(true));
