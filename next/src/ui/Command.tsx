@@ -63,9 +63,14 @@ export function CommandDialog({open, onOpenChange, label, bare = false, restoreF
  * The command list's root inside a `bare` CommandDialog, with the selection controlled: `value` is the
  * selected item's value (the caller picks the first one whenever the results change).
  */
-export function CommandRoot({label, value, onValueChange, children}: {label: string; value: string; onValueChange: (v: string) => void; children: ReactNode}) {
+export function CommandRoot({label, value, onValueChange, loop = true, children}: {
+  label: string; value: string; onValueChange: (v: string) => void;
+  /** Whether the arrow keys wrap around (not in the palette, whose last row can be "Sign out"). */
+  loop?: boolean;
+  children: ReactNode;
+}) {
   // No vim bindings: Ctrl+K is the palette's own key (it must close and reopen it, never move the selection).
-  return <K label={label} shouldFilter={false} loop vimBindings={false} value={value} onValueChange={onValueChange}>{children}</K>;
+  return <K label={label} shouldFilter={false} loop={loop} vimBindings={false} value={value} onValueChange={onValueChange}>{children}</K>;
 }
 
 export interface CommandInputProps {
@@ -84,7 +89,7 @@ export function CommandInput({value, onValueChange, placeholder, ref}: CommandIn
         value={value}
         onValueChange={onValueChange}
         placeholder={placeholder}
-        className="h-full min-w-0 flex-1 bg-transparent text-md text-fg outline-none placeholder:text-fg-subtle"
+        className="h-full min-w-0 flex-1 truncate bg-transparent text-md text-fg outline-none placeholder:text-fg-subtle"
       />
     </div>
   );
@@ -173,6 +178,8 @@ export interface CommandPopoverProps {
    * change while it is open (an observer) renders its own CommandPick.
    */
   render?: ((onClose: () => void) => ReactNode) | undefined;
+  /** Opens on its first option (CommandPick `fromTop`). */
+  fromTop?: boolean | undefined;
 }
 
 /** The options matching every word of the query (in the label or the extra words). */
@@ -186,7 +193,7 @@ export function matchOptions(options: readonly PickOption[], query: string): rea
 }
 
 /** A filterable list of choices under a button (Linear's pickers): type to narrow, Enter takes the first match. */
-export function CommandPopover({trigger, label, placeholder, options, empty = 'No choices here.', width = 'sm', onOpenChange, render}: CommandPopoverProps) {
+export function CommandPopover({trigger, label, placeholder, options, empty = 'No choices here.', width = 'sm', onOpenChange, render, fromTop}: CommandPopoverProps) {
   const [open, setOpen] = useState(false);
   const onClose = () => {
     setOpen(false);
@@ -199,7 +206,7 @@ export function CommandPopover({trigger, label, placeholder, options, empty = 'N
     }}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent width={width}>
-        {render ? render(onClose) : <CommandPick label={label} placeholder={placeholder} options={options} empty={empty} onClose={onClose}/>}
+        {render ? render(onClose) : <CommandPick label={label} placeholder={placeholder} options={options} empty={empty} onClose={onClose} fromTop={fromTop}/>}
       </PopoverContent>
     </Popover>
   );
@@ -217,13 +224,15 @@ export interface CommandPickProps {
   query?: string | undefined;
   onQueryChange?: ((query: string) => void) | undefined;
   filtered?: boolean | undefined;
+  /** Opens on its first option, not the current choice (the list filters: "In effect" first, at the top). */
+  fromTop?: boolean | undefined;
 }
 
 /**
  * The list of a picker (in a CommandPopover, or a CommandDialog's `bare` content): type to narrow, Enter takes the
  * first match; it opens on the current choice, so Enter right away keeps it.
  */
-export function CommandPick({label, placeholder, options, empty, onClose, target, query: outer, onQueryChange, filtered}: CommandPickProps) {
+export function CommandPick({label, placeholder, options, empty, onClose, target, query: outer, onQueryChange, filtered, fromTop}: CommandPickProps) {
   const [own, setOwn] = useState('');
   const query = outer ?? own;
   const setQuery = (q: string) => {
@@ -235,7 +244,7 @@ export function CommandPick({label, placeholder, options, empty, onClose, target
   // Opens on the current choice; the first match is selected whenever the query changes (Enter takes it).
   // The current value of a one-value field (status, priority, milestone); a multi-value field (labels) opens on its first
   // option, never on one that Enter would take away.
-  const [selected, setSelected] = useState(() => options.find((o) => o.checked === true && !o.keepOpen)?.value ?? first);
+  const [selected, setSelected] = useState(() => (fromTop ? undefined : options.find((o) => o.checked === true && !o.keepOpen)?.value) ?? first);
   const [seen, setSeen] = useState(query);
   if (seen !== query) {
     setSeen(query);

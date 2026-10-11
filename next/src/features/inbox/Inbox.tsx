@@ -39,7 +39,7 @@ import {
 import {AgoCell, RefCell, SelectionCount, StateGlyph, StateIcon, stateLook, TitleCell, useOverlay, usePool, useUser} from '../issues/cells.tsx';
 import {issuePath} from '../issues/edits.ts';
 import {ListCursor} from '../issues/flags.ts';
-import {readAll as markAllRead, setStatus} from './actions.ts';
+import {readAll as markAllRead, setStatus, setStatusMany} from './actions.ts';
 import {reasonOf} from './reason.ts';
 import {knownSubject, type Subject, subjectOf, subjectPath, subjectsKnown} from './subject.ts';
 import {activityOf, type InboxResult, inboxRows, togglePin} from './inbox.ts';
@@ -160,7 +160,8 @@ export default observer(function Inbox() {
     const marked = markAllRead(app, untracked(() => model.result.get().ids));
     if (!marked.length) return;
     notify(app, {tone: 'neutral', series: 'inbox', title: `Marked ${String(marked.length)} read`, action: {label: 'Undo', run: () => {
-      setStatus(app, marked, (st) => (st === 'read' ? 'unread' : undefined));
+      // One request too (QA: one per notification, and a tab closed soon after left most of them read).
+      setStatusMany(app, marked, 'unread', 'read');
     }}});
   };
   useShortcutScope('inbox');
@@ -182,7 +183,7 @@ export default observer(function Inbox() {
         </Menu>
         <Button size="sm" variant="ghost" icon={CheckCheck} shortcut={shortcutHint('inbox.readAll')} tooltip="Mark everything listed read" onClick={readAll}>Mark all read</Button>
       </PageHeader>
-      <InboxBody model={model} unreadOnly={shown.filter === 'unread'} byRepo={shown.group === 'repo'}/>
+      <InboxBody model={model} unreadOnly={shown.filter === 'unread'}/>
     </>
   );
 });
@@ -198,13 +199,13 @@ const UnreadCount = observer(function UnreadCount() {
   return n ? <span className="text-fg-subtle tabular-nums">{n}</span> : null;
 });
 
-const InboxBody = observer(function InboxBody({model, unreadOnly, byRepo}: {model: InboxModel; unreadOnly: boolean; byRepo: boolean}) {
+const InboxBody = observer(function InboxBody({model, unreadOnly}: {model: InboxModel; unreadOnly: boolean}) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const {rows} = model.result.get();
   return (
     <PageBody ref={setScroller}>
       {rows.length ?
-        <InboxList model={model} scroller={scroller} byRepo={byRepo}/> :
+        <InboxList model={model} scroller={scroller}/> :
         <EmptyState icon={BellOff} title={unreadOnly ? 'All caught up' : 'No notifications'}
           description={unreadOnly ? 'Nothing unread. Pinned and read notifications are under “Unread” off.' : 'Mentions, reviews and activity on what you watch show here.'}/>}
     </PageBody>
@@ -216,8 +217,8 @@ const rowId = (id: number) => `inbox-row-${String(id)}`;
 /** The inbox's place in listReturn (one inbox: its filters do not change the row the user left from). */
 const INBOX = '/notifications';
 
-/** byRepo: grouped by repository (the group header names it; the rows give the number only). */
-const InboxList = observer(function InboxList({model, scroller, byRepo}: {model: InboxModel; scroller: HTMLDivElement | null; byRepo: boolean}) {
+/** Grouped by repository, a row under its repository's header gives the number only (`inHeader`). */
+const InboxList = observer(function InboxList({model, scroller}: {model: InboxModel; scroller: HTMLDivElement | null}) {
   const app = useApp();
   const navigate = useNavigate();
   const {rows, ids} = model.result.get();
@@ -419,7 +420,7 @@ const InboxList = observer(function InboxList({model, scroller, byRepo}: {model:
             return (
               <div key={it.key} className="absolute inset-x-0 top-0" style={{transform: `translateY(${String(it.start)}px)`}}>
                 {r.type === 'note' ?
-                  <NoteRow id={r.id} cursor={cursor} onClick={click} byRepo={byRepo}/> :
+                  <NoteRow id={r.id} cursor={cursor} onClick={click} byRepo={r.inHeader === true}/> :
                   <ListGroupHeader leading={r.key === 'pinned' ? <Icon icon={Pin}/> : r.key.startsWith('repo:') ? <Icon icon={FolderGit2}/> : null} label={r.label} count={r.count}/>}
               </div>
             );
@@ -508,11 +509,15 @@ const NoteRowBody = observer(function NoteRowBody({n, cursor, onClick, byRepo}: 
   );
 });
 
-/** Why the notification is here, and whose activity it is (muted, after the title). */
-function Why({why, actor}: {why: string; actor: number}) {
+/**
+ * Why the notification is here, and whose activity it is (muted, after the title). An observer: the actor's User
+ * often arrives after the row's first render (QA: rows kept "User 1", "User 2" until the page was left); until then
+ * the row names no one rather than a placeholder.
+ */
+const Why = observer(function Why({why, actor}: {why: string; actor: number}) {
   const user = useUser(actor);
-  return <span className="text-fg-subtle"> · {why}{actor && user.name ? ` · ${user.name}` : ''}</span>;
-}
+  return <span className="text-fg-subtle"> · {why}{actor && user.login ? ` · ${user.name}` : ''}</span>;
+});
 
 function SubjectIcon({s}: {s: Subject}) {
   return <StateGlyph look={stateLook(s.state === 'open' ? 'open' : 'closed', s.pull, s.state === 'merged')}/>;

@@ -35,6 +35,8 @@ test('by repository: groups ordered by their newest notification', () => {
   const r = inboxRows(NOTES, {unread: false, byRepo: true}, ctx());
   expect(r.rows.flatMap((x) => (x.type === 'group' ? [x.label] : []))).toEqual(['Pinned', 'b/two', 'a/one']);
   expect(r.ids).toEqual([3, 2, 4, 1]);
+  // Only rows under their repository's header leave its name out (not the pinned one).
+  expect(r.rows.flatMap((x) => (x.type === 'note' && x.inHeader ? [x.id] : []))).toEqual([2, 4, 1]);
 });
 
 test('togglePin', () => {

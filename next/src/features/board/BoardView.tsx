@@ -23,7 +23,7 @@ import {sitePath} from '../../app/config.ts';
 import {classicHref} from '../../app/classic.ts';
 import {ClassicLink} from '../../app/ClassicLink.tsx';
 import {connectivity, onlineOnly} from '../../app/online.ts';
-import {notify} from '../../app/notices.ts';
+import {dismissSeries, notify} from '../../app/notices.ts';
 import {useHold} from '../../app/repo.ts';
 import {PageBody} from '../../app/shell/Frame.tsx';
 import {PageHeader} from '../../app/shell/PageHeader.tsx';
@@ -47,13 +47,15 @@ import {createColumn, deleteColumn, editColumn, orderColumns} from './columns.ts
 import {BoardDnd, SLOT} from './dnd.ts';
 import {rememberBoard} from '../../app/lastBoard.ts';
 import {openCreate} from '../../app/create.ts';
-import {BoardModel} from './model.ts';
+import {BOARD_MOVES, BoardModel} from './model.ts';
 
 /** The card the cursor was on when a board was left (Back or Esc from a card finds it there). Per tab. */
 const lastCard = new Map<number, number>();
 
 /** Closed-tier pages a board loads at most (B6: ≤ 500 issues each by default). */
 const CLOSED_PAGES = 4;
+/** Why a reader's card move does nothing (the key's notice, the palette's reason). */
+const READ_ONLY_MOVE = 'Moving cards needs write access to its issues.';
 
 export function BoardPage() {
   const {id: raw = ''} = useParams({strict: false});
@@ -256,7 +258,7 @@ const Board = observer(function Board({project}: {project: Entity<'Project'>}) {
   const shift = (dCol: number, dRow: number) => {
     if (!editable) {
       // Said, not ignored (QA verify3: a reader's Shift+L did nothing, silently).
-      notify(app, {tone: 'neutral', title: 'You can view this board, not change it', description: 'Moving cards needs write access to its issues.', series: 'board.readonly'});
+      notify(app, {tone: 'neutral', title: 'You can view this board, not change it', description: READ_ONLY_MOVE, series: 'board.readonly'});
       return;
     }
     const cur = here();
@@ -293,18 +295,18 @@ const Board = observer(function Board({project}: {project: Entity<'Project'>}) {
   useShortcut('board.right', () => {
     step(1, 0);
   });
-  // Moves apply to the card under the cursor, where it can go (the palette lists them only then).
-  const canShift = (dCol: number, dRow: number) => () => {
+  // Moves apply to the card under the cursor, where it can go; the palette lists them otherwise with the reason.
+  const canShift = (dCol: number, dRow: number) => (): boolean | string => {
+    if (!editable) return READ_ONLY_MOVE; // the key says it too
     const cur = untracked(here);
-    if (!cur?.at) return false;
-    if (!editable) return true; // the key says why it moves nothing
+    if (!cur?.at) return 'Put the cursor on a card first (J and K, or the arrow keys).';
     const {layout, at} = cur;
     if (dCol) {
       const ci = layout.columns.findIndex((c) => c.id === at.column);
-      return layout.columns[ci + dCol] !== undefined;
+      return layout.columns[ci + dCol] !== undefined || (dCol < 0 ? 'The card is in the first column.' : 'The card is in the last column.');
     }
     const n = layout.cards.get(at.column)?.length ?? 0;
-    return dRow > 0 ? at.index < n - 1 : at.index > 0;
+    return (dRow > 0 ? at.index < n - 1 : at.index > 0) || (dRow > 0 ? 'The card is the last in its column.' : 'The card is the first in its column.');
   };
   useShortcut('board.moveDown', () => {
     shift(0, 1);
@@ -328,17 +330,26 @@ const Board = observer(function Board({project}: {project: Entity<'Project'>}) {
   const [adding, setAdding] = useState(false);
   const cursorColumn = () => untracked(here)?.at?.column;
   const columnOf = (id: number | undefined) => (id === undefined ? undefined : untracked(() => model.columns.find((c) => c.id === id)));
+  // Listed with the reason when they cannot run: offline, read-only, no column under the cursor, the default column.
+  const columnWhy = (needColumn: boolean) => (): boolean | string => {
+    if (!editable) return 'Changing the columns needs write access to the board.';
+    if (!connectivity.online) return onlineOnly('Changing columns');
+    return !needColumn || cursorColumn() !== undefined || 'Put the cursor in a column first (J and K, or the arrow keys).';
+  };
   useShortcut('board.addColumn', () => {
     setAdding(true);
-  }, editable, () => connectivity.online);
+  }, true, columnWhy(false));
   useShortcut('board.renameColumn', () => {
     const c = cursorColumn();
     if (c !== undefined) setColumnDialog({kind: 'rename', columnId: c});
-  }, editable, () => connectivity.online && cursorColumn() !== undefined);
+  }, true, columnWhy(true));
   useShortcut('board.deleteColumn', () => {
     const c = cursorColumn();
-    if (c !== undefined) setColumnDialog({kind: 'delete', columnId: c});
-  }, editable, () => connectivity.online && columnOf(cursorColumn())?.default === false);
+    if (c !== undefined && columnOf(c)?.default === false) setColumnDialog({kind: 'delete', columnId: c});
+  }, true, () => {
+    const why = columnWhy(true)();
+    return why !== true ? why : columnOf(cursorColumn())?.default === false || 'The default column cannot be deleted: make another column the default first.';
+  });
   /** After a column dialog: the focus back on the board (a column's cards), never on <body>. */
   const focusColumn = (id: number | undefined) => {
     requestAnimationFrame(() => {
@@ -420,7 +431,7 @@ const Board = observer(function Board({project}: {project: Entity<'Project'>}) {
                 }}/>
             ))}
             {columns.length === 0 && <EmptyState icon={Columns3} title="No columns yet" description="Add a column to start the board."/>}
-            {editable && <AddColumn projectId={projectId} editing={adding} setEditing={setAdding}/>}
+            {editable && <AddColumn projectId={projectId} editing={adding} setEditing={setAdding} columns={columns.length}/>}
           </BoardLanes>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -645,7 +656,11 @@ function ColumnDialog({model, state, onClose}: {model: BoardModel; state: Column
       }}>Cancel</Button>
       <Button variant="danger" onClick={() => {
         onClose(true);
-        void deleteColumn(app, projectId, column.id);
+        void deleteColumn(app, projectId, column.id).then((ok) => {
+          // Its cards went to the default column: the Undo of a move into or out of it no longer holds (QA: the
+          // notice stayed, and its Undo moved the card again).
+          if (ok) dismissSeries(app, BOARD_MOVES);
+        });
       }}>Delete</Button>
     </>}/>
   );
@@ -659,11 +674,19 @@ const ColumnMenu = observer(function ColumnMenu({model, column, index, count, on
   const order = () => untracked(() => model.columns.map((c) => c.id));
   const offline = !connectivity.online;
   const reorder = (by: number) => {
-    const ids = order();
+    const before = order();
+    const ids = [...before];
     const [moved] = ids.splice(index, 1);
     if (moved === undefined) return;
     ids.splice(index + by, 0, moved);
-    void orderColumns(app, projectId, ids);
+    void orderColumns(app, projectId, ids).then((ok) => {
+      // Said, with Undo (and ⌘Z): the previous order, if nobody changed the columns meanwhile.
+      if (ok) notify(app, {tone: 'neutral', title: `“${column.title}” moved ${by < 0 ? 'left' : 'right'}`, series: 'board.columns', action: {label: 'Undo', run: () => {
+        const now = order();
+        if (now.length === ids.length && now.every((id, i) => id === ids[i])) void orderColumns(app, projectId, before);
+        else notify(app, {tone: 'neutral', title: 'Nothing to undo', description: 'The columns have changed since.', series: 'undo'});
+      }}});
+    });
   };
   return (
     <>
@@ -726,7 +749,7 @@ function newIssueIn(app: ReturnType<typeof useApp>, projectId: number, columnId:
 }
 
 /** The lane after the last column: "Add column", then the new column's lane with its name field (online only). */
-const AddColumn = observer(function AddColumn({projectId, editing, setEditing}: {projectId: number; editing: boolean; setEditing: (on: boolean) => void}) {
+const AddColumn = observer(function AddColumn({projectId, editing, setEditing, columns}: {projectId: number; editing: boolean; setEditing: (on: boolean) => void; columns: number}) {
   const app = useApp();
   const [title, setTitle] = useState('');
   const field = useRef<HTMLInputElement>(null);
@@ -737,11 +760,23 @@ const AddColumn = observer(function AddColumn({projectId, editing, setEditing}: 
     refocus.current = true;
     setEditing(false);
   };
+  // …and in view: the new column arrives (as a delta) before or after the field closes and pushes the button right;
+  // it is scrolled to once more when it does (QA: focused, 4 px of it showing at the board's edge).
+  const keepInView = useRef<number | undefined>(undefined);
+  const show = () => {
+    button.current?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  };
   useEffect(() => {
     if (editing || !refocus.current) return;
     refocus.current = false;
     button.current?.focus({preventScroll: true});
+    show();
   }, [editing]);
+  useEffect(() => {
+    if (keepInView.current === undefined || keepInView.current === columns || editing) return;
+    keepInView.current = undefined;
+    show();
+  }, [columns, editing]);
   const offline = !connectivity.online;
   const submit = () => {
     const t = title.trim();
@@ -749,6 +784,7 @@ const AddColumn = observer(function AddColumn({projectId, editing, setEditing}: 
     void createColumn(app, projectId, t).then((ok) => {
       if (ok) {
         setTitle('');
+        keepInView.current = columns;
         close();
       }
     });

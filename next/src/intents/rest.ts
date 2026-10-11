@@ -42,6 +42,9 @@ export function requestFor(i: Intent, pool: Pool, overlay: Overlay): ApiRequest 
     if (i.kind === 'notification.status') {
       return {method: 'PATCH', api: 'v1', path: `/notifications/threads/${String(i.notificationId)}?to-status=${i.status}`};
     }
+    if (i.kind === 'notification.statusMany') {
+      return {method: 'PUT', api: 'sync', path: '/notifications/status', body: {ids: i.notificationIds, status: i.status}};
+    }
     if (i.kind === 'notification.readAll') {
       // Unread ones only (the default status-types): pinned notifications stay pinned.
       return {method: 'PUT', api: 'v1', path: `/notifications?${new URLSearchParams({last_read_at: i.lastReadAt, 'to-status': 'read'}).toString()}`};

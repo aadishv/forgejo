@@ -15,6 +15,7 @@ import {serverMembers} from './view.ts';
 export function effectHeld(pool: Pool, i: Intent, me: number): boolean {
   return untracked(() => {
     if (i.kind === 'notification.status') return pool.model('Notification').get(i.notificationId)?.data.status === i.status;
+    if (i.kind === 'notification.statusMany') return i.notificationIds.every((id) => pool.model('Notification').get(id)?.data.status === i.status);
     if (i.kind === 'notification.readAll') return i.notificationIds.every((id) => pool.model('Notification').get(id)?.data.status !== 'unread');
     const issue = pool.model('Issue').get(i.issueId)?.data;
     switch (i.kind) {

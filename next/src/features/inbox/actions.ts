@@ -46,3 +46,21 @@ export function readAll(app: App, ids: readonly number[]): number[] {
   });
   return notificationIds;
 }
+
+/**
+ * Sets notifications to a status in one request (Undo of "Mark all read": those it marked, back to unread), those
+ * not there already. Nothing when none needs it.
+ */
+export function setStatusMany(app: App, ids: readonly number[], status: 'read' | 'unread' | 'pinned', from: string): void {
+  const s = app.session;
+  if (!s) return;
+  const {overlay, intents} = editing(app);
+  const notificationIds = untracked(() => ids.filter((id) => {
+    const n = s.data.pool.model('Notification').get(id);
+    return n !== undefined && notificationStatus(overlay, n) === from;
+  }));
+  if (!notificationIds.length) return;
+  runInAction(() => {
+    intents.submit({kind: 'notification.statusMany', issueId: 0, repoId: 0, notificationIds, status});
+  });
+}

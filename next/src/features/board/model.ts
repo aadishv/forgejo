@@ -19,6 +19,9 @@ import type {ProjectColumn} from '../../protocol/types.gen.ts';
 import {ListCursor} from '../issues/flags.ts';
 import {type BoardLayout, boardLayout, findCard, type Move, moveTo} from './board.ts';
 
+/** The notices of a board's card moves (one Undo, for the latest; dropped when a column is deleted). */
+export const BOARD_MOVES = 'board.move';
+
 const sameColumns = (a: readonly ProjectColumn[], b: readonly ProjectColumn[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 const sameIds = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -163,14 +166,32 @@ export class BoardModel {
     editing(this.app).intents.submit({
       kind: 'board.move', issueId, repoId: issue.repo_id, projectId: this.projectId, columnId: m.column, position: m.position, baseColumn: from.column,
     });
-    // To another column (by key, menu or drag): said, with Undo (and ⌘Z) back to where it was.
-    if (say && m.column !== from.column) {
+    // Said, with Undo (and ⌘Z) back to where it was: to another column (by key, menu or drag), and up or down its
+    // own (QA: reorders had neither). One notice for the latest move (a series).
+    if (say) {
       const title = layout.columns.find((c) => c.id === m.column)?.title ?? 'another column';
-      notify(this.app, {tone: 'neutral', title: `#${String(issue.number)} moved to “${title}”`, series: 'board.move', action: {label: 'Undo', run: () => {
-        this.move(issueId, from.column, from.index, false);
+      const what = m.column !== from.column ? `moved to “${title}”` : m.position < from.index ? 'moved up' : 'moved down';
+      notify(this.app, {tone: 'neutral', title: `#${String(issue.number)} ${what}`, series: BOARD_MOVES, action: {label: 'Undo', run: () => {
+        this.undoMove(issueId, m.column, from);
       }}});
     }
     return true;
+  }
+
+  /**
+   * Puts a card back where it was before a move, if it is still where that move put it (moved again since, or its
+   * column deleted: what the notice offered no longer holds, and it says so instead of moving the card elsewhere).
+   */
+  private undoMove(issueId: number, movedTo: number, from: {column: number; index: number}): void {
+    const layout = untracked(() => this.layout.get());
+    const now = findCard(layout, issueId);
+    if (now?.column !== movedTo || !layout.cards.has(from.column)) {
+      notify(this.app, {tone: 'neutral', title: 'Nothing to undo', description: 'The card or its column has changed since.', series: 'undo'});
+      return;
+    }
+    // Gaps count the card itself: below its old place it goes into gap `index`, above it into `index + 1`.
+    const gap = now.column === from.column && now.index < from.index ? from.index + 1 : from.index;
+    this.move(issueId, from.column, gap, false);
   }
 
   /**

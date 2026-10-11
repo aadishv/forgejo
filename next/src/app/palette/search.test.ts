@@ -119,6 +119,9 @@ test('a repository named by the query outranks things found by its name; boards 
   // "atlas": the repository acme/atlas (exact name) beats the board "Atlas 1.0" (title start, 3 + bonuses).
   expect(repoScore('acme/atlas', 'atlas', ['atlas'])).toBeGreaterThan(scoreNamed('atlas 1.0', 'acme/atlas', ['atlas']) + 1);
   expect(repoScore('openlab/field-notes', 'field-notes', ['field'])).toBeGreaterThanOrEqual(4);
+  // Owner and name as two words name the repository as its full name does: above the board "Atlas 1.0" of acme/atlas.
+  expect(repoScore('acme/atlas', 'atlas', ['acme', 'atlas'])).toBeGreaterThanOrEqual(6);
+  expect(repoScore('acme/atlas', 'atlas', ['acme', 'atlas'])).toBeGreaterThan(scoreNamed('atlas 1.0', 'acme/atlas', ['acme', 'atlas']) + 0.5);
   // The milestone "Q4 migration" of acme/infra is no match for "infra"; "infra q4" is.
   expect(scoreNamed('q4 migration', 'acme/infra', ['infra'])).toBe(-1);
   expect(scoreNamed('q4 migration', 'acme/infra', ['infra', 'q4'])).toBeGreaterThan(0);

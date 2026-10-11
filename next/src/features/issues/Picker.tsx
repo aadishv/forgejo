@@ -16,6 +16,8 @@ import {type ReactElement, useEffect, useState} from 'react';
 import {type App, type PickerKind, useApp} from '../../app/store.ts';
 import type {Entity} from '../../data/entity.ts';
 import {editing} from '../../intents/session.ts';
+import {inverseIntents} from '../../intents/intents.ts';
+import {quietUndo, undoDepth} from '../../app/notices.ts';
 import {issueAssigneeIds, issueDeadline, issueLabelIds, issueMilestone, issueProject, issueState, viewMembers} from '../../intents/view.ts';
 import type {Label} from '../../protocol/types.gen.ts';
 import {Avatar, CommandDialog, CommandPick, CommandPopover, Icon, LabelDot, LabelIcon, type LucideIcon, matchOptions, type PickOption} from '../../ui/index.ts';
@@ -54,7 +56,9 @@ export const IssuePicker = observer(function IssuePicker() {
   const shown = p ?? last;
   if (!shown) return null;
   return (
-    <CommandDialog open={Boolean(p)} label={TITLES[shown.kind]} bare onOpenChange={(open) => {
+    // Keyed by the opening, as the palette: a picker opened while the last one still fades out (L, Esc, S within
+    // ~150 ms) is a new dialog that takes the focus; reopening the fading one kept no focus (QA: typed keys were lost).
+    <CommandDialog key={n} open={Boolean(p)} label={TITLES[shown.kind]} bare onOpenChange={(open) => {
       if (!open) close(app);
     }}>
       <PickerList key={n} app={app} kind={shown.kind} issueIds={shown.issueIds} named onClose={() => {
@@ -88,7 +92,11 @@ const PickerList = observer(function PickerList({app, kind, issueIds, named = fa
   useEffect(() => {
     if (first !== undefined && (kind === 'assignees' || kind === 'reviewers')) loadPeople(app, first);
   }, [app, first, kind]);
-  const {options, empty, searched} = pickerOptions(app, kind, issueIds, query);
+  const picked = pickerOptions(app, kind, issueIds, query);
+  const {empty, searched} = picked;
+  const options = picked.options.map((o) => ({...o, onSelect: () => {
+    undoablePick(app, o.onSelect);
+  }}));
   const issues = issuesOf(app, issueIds);
   const allPulls = issues.every((i) => untracked(() => i.data.is_pull));
   const one = issues.length === 1 ? issues[0] : undefined;
@@ -100,6 +108,23 @@ const PickerList = observer(function PickerList({app, kind, issueIds, named = fa
       query={query} onQueryChange={setQuery} filtered={searched}/>
   );
 });
+
+/**
+ * Runs a picker's choice; ⌘Z then sets the property back (the inverse of the intents it submitted), unless the choice
+ * offered its own Undo (closing, reopening: their notices).
+ */
+function undoablePick(app: App, choose: () => void): void {
+  const {intents} = editing(app);
+  const depth = undoDepth();
+  const done = intents.capture(choose);
+  if (undoDepth() !== depth) return;
+  const back = done.slice().reverse().flatMap(inverseIntents);
+  if (back.length) quietUndo(() => {
+    runInAction(() => {
+      for (const i of back) intents.submit(i);
+    });
+  });
+}
 
 /** How many of the issues have a property: all (checked), some (mixed) or none. */
 function coverage(issues: readonly Entity<'Issue'>[], has: (i: Entity<'Issue'>) => boolean): boolean | 'mixed' {
@@ -301,10 +326,13 @@ export function pickerOptions(app: App, kind: PickerKind, issueIds: readonly num
 export function dueOptions(now: number): {label: string; day: string}[] {
   const d = new Date(now);
   const at = (days: number) => isoDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days));
-  const toFriday = (5 - d.getDay() + 7) % 7;
-  const toMonday = ((1 - d.getDay() + 7) % 7) || 7;
+  const day = d.getDay();
+  const toMonday = ((1 - day + 7) % 7) || 7;
+  // The end of this week is a Friday still to come: not on Friday (it is today) or the weekend (it has passed; QA: on
+  // a Sunday it listed next week's Friday after "Next week").
+  const endOfWeek = day >= 1 && day <= 4 ? [{label: 'End of this week', day: at(5 - day)}] : [];
   return [
-    {label: 'Today', day: at(0)}, {label: 'Tomorrow', day: at(1)}, {label: 'End of this week', day: at(toFriday)},
+    {label: 'Today', day: at(0)}, {label: 'Tomorrow', day: at(1)}, ...endOfWeek,
     {label: 'Next week', day: at(toMonday)}, {label: 'In two weeks', day: at(14)},
     {label: 'In a month', day: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate()))},
   ];

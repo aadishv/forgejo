@@ -116,12 +116,48 @@ export type Intent = Base & (
    * `lastReadAt` — the newest of `notificationIds`, the ones the user saw — become read. issueId and repoId are 0.
    */
   | {kind: 'notification.readAll'; notificationIds: number[]; lastReadAt: string}
+  /**
+   * Inbox: several notifications to one status in one request (B9 `PUT /-/sync/api/notifications/status`): Undo of
+   * "Mark all read" sets exactly those back to unread. issueId and repoId are 0.
+   */
+  | {kind: 'notification.statusMany'; notificationIds: number[]; status: 'read' | 'unread' | 'pinned'}
 );
 
 export type IntentKind = Intent['kind'];
 
 /** An intent as the caller describes it (id, key and time are filled in). */
 export type IntentInput = Intent extends infer I ? I extends Intent ? Omit<I, 'id' | 'key' | 'created'> : never : never;
+
+/**
+ * What undoes an intent (⌘Z after a property change made from a picker): the property set back to what the user saw.
+ * Nothing for what is not a property (text, comments, reviews, triage). An exclusive label that replaced others
+ * comes off and they go back on.
+ */
+export function inverseIntents(i: Intent): IntentInput[] {
+  const at = {issueId: i.issueId, repoId: i.repoId};
+  switch (i.kind) {
+    case 'issue.label':
+      return i.add ?
+        [{...at, kind: 'issue.label', labelId: i.labelId, add: false, drop: []}, ...i.drop.map((labelId): IntentInput => ({...at, kind: 'issue.label', labelId, add: true, drop: []}))] :
+        [{...at, kind: 'issue.label', labelId: i.labelId, add: true, drop: []}];
+    case 'issue.assignee':
+    case 'issue.reviewer':
+    case 'issue.subscribe':
+      return [{...at, kind: i.kind, userId: i.userId, add: !i.add}];
+    case 'issue.dependency':
+      return [{...at, kind: 'issue.dependency', dependencyId: i.dependencyId, add: !i.add}];
+    case 'issue.milestone':
+      return [{...at, kind: 'issue.milestone', milestoneId: i.base, base: i.milestoneId}];
+    case 'issue.deadline':
+      return [{...at, kind: 'issue.deadline', due: i.base, base: i.due}];
+    case 'issue.project':
+      return [{...at, kind: 'issue.project', projectId: i.base, columnId: 0, base: i.projectId}];
+    case 'issue.state':
+      return i.base === 'open' || i.base === 'closed' ? [{...at, kind: 'issue.state', state: i.base, base: i.state}] : [];
+    default:
+      return [];
+  }
+}
 
 export function newIntent(input: IntentInput, now = Date.now()): Intent {
   return {...input, id: uuid(), key: uuid(), created: now};
@@ -168,7 +204,7 @@ export const POLICY: Record<IntentKind, 'set' | 'scalar' | 'text' | 'create' | '
   'issue.milestone': 'scalar', 'issue.pin': 'idempotent', 'issue.lock': 'idempotent', 'issue.label': 'set', 'issue.assignee': 'set',
   'issue.dependency': 'set', 'issue.project': 'idempotent', 'issue.subscribe': 'set', 'issue.reviewer': 'set', 'reaction': 'set', 'comment.create': 'create',
   'comment.edit': 'text', 'comment.delete': 'idempotent', 'comment.resolve': 'idempotent', 'review.submit': 'create', 'board.move': 'idempotent', 'pr.viewed': 'idempotent',
-  'notification.status': 'idempotent', 'notification.readAll': 'idempotent',
+  'notification.status': 'idempotent', 'notification.readAll': 'idempotent', 'notification.statusMany': 'idempotent',
 };
 
 /**
@@ -178,7 +214,7 @@ export const POLICY: Record<IntentKind, 'set' | 'scalar' | 'text' | 'create' | '
  */
 export function chainOf(i: Intent): string {
   // The inbox is one queue: a notification marked unread right after "Mark all read" reaches Forgejo after it.
-  if (i.kind === 'notification.status' || i.kind === 'notification.readAll') return 'n:inbox';
+  if (i.kind === 'notification.status' || i.kind === 'notification.readAll' || i.kind === 'notification.statusMany') return 'n:inbox';
   if (i.kind === 'board.move') return `b:${String(i.projectId)}`;
   // Properties that are independent of the rest of the issue have a queue each: one that Forgejo keeps refusing
   // (or that waits for a retry) does not hold back the issue's other changes (QA round 2: a pin answered 500 held
@@ -203,6 +239,7 @@ export function groupOf(i: Intent, userId: number): string {
   switch (i.kind) {
     case 'notification.status':
     case 'notification.readAll':
+    case 'notification.statusMany':
     case 'pr.viewed':
       return `user:${String(userId)}`;
     case 'issue.body':
@@ -329,6 +366,8 @@ export function intentOps(i: Intent, ctx: OpsContext = {userId: 0}): OverlayOp[]
       return [{t: 'field', model: 'Notification', id: i.notificationId, field: 'status', value: i.status}];
     case 'notification.readAll':
       return i.notificationIds.map((id): OverlayOp => ({t: 'field', model: 'Notification', id, field: 'status', value: 'read'}));
+    case 'notification.statusMany':
+      return i.notificationIds.map((id): OverlayOp => ({t: 'field', model: 'Notification', id, field: 'status', value: i.status}));
   }
 }
 
@@ -408,6 +447,8 @@ export function describeIntent(i: Intent, names: Names = {}): string {
       return i.status === 'read' ? 'Marking a notification read' : i.status === 'unread' ? 'Marking a notification unread' : 'Pinning a notification';
     case 'notification.readAll':
       return `Marking ${String(i.notificationIds.length)} ${i.notificationIds.length === 1 ? 'notification' : 'notifications'} read`;
+    case 'notification.statusMany':
+      return `Marking ${String(i.notificationIds.length)} ${i.notificationIds.length === 1 ? 'notification' : 'notifications'} ${i.status === 'pinned' ? 'pinned' : i.status}`;
   }
 }
 

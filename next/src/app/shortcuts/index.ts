@@ -24,9 +24,10 @@ export function activeHint(id: ShortcutId): string | undefined {
 /**
  * Binds `run` to a shortcut while the component is mounted (and `enabled`).
  * The latest `run` is called, without re-binding on every render. `when` says whether it applies at the moment
- * (read when a key is typed and when the palette lists the page's commands: Open only with a row under the cursor).
+ * (read when a key is typed and when the palette lists the page's commands: Open only with a row under the cursor);
+ * a string is why it cannot run now (the palette lists it disabled with that reason, its key reaches `run`).
  */
-export function useShortcut(id: ShortcutId, run: () => void, enabled = true, when?: () => boolean): void {
+export function useShortcut(id: ShortcutId, run: () => void, enabled = true, when?: () => boolean | string): void {
   const ref = useRef(run);
   const whenRef = useRef(when);
   useLayoutEffect(() => {

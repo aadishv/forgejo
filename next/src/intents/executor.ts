@@ -168,7 +168,7 @@ const MAX_SENDS = 6;
  * deferred change), and dependencies (B6 conditionals: they arrive with the issue's next load, which their
  * timeline event starts: sync/client.ts CONDITIONAL_EVENTS).
  */
-const HOT_KINDS: ReadonlySet<string> = new Set(['notification.status', 'notification.readAll', 'issue.dependency']);
+const HOT_KINDS: ReadonlySet<string> = new Set(['notification.status', 'notification.readAll', 'notification.statusMany', 'issue.dependency']);
 const HOT_WAIT_MS = 5000;
 
 /** RUM: an intent first attempted within this long of its local apply was sent at once (online). */
@@ -257,11 +257,29 @@ export class Intents {
     if (env.isLeader()) this.takeOver();
   }
 
+  /** The intents submitted while `capture` runs (a picker's choice: what ⌘Z undoes). */
+  private captured: Intent[] | undefined;
+
+  /** Runs fn and returns the intents it submitted. */
+  capture(fn: () => void): Intent[] {
+    const outer = this.captured;
+    const mine: Intent[] = [];
+    this.captured = mine;
+    try {
+      fn();
+    } finally {
+      this.captured = outer;
+    }
+    outer?.push(...mine);
+    return mine;
+  }
+
   /** Applies an intent to the overlay at once, stores it (a fresh Idempotency-Key) and queues it; returns it. */
   submit(input: IntentInput, replaces: {draft?: string; intent?: string} = {}): Intent {
     // An entity created offline and already created on the server: its server id (it may still show under its temporary one).
     const t0 = performance.now();
     const i = this.remapKnown(newIntent(input, this.now()));
+    this.captured?.push(i);
     const names = this.env.names?.() ?? {};
     const issueNumber = issueNumberOf(i, names);
     const rec: IntentRecord = {
@@ -1405,6 +1423,7 @@ function subjectOf(i: Intent): string {
       return 'The repository';
     case 'notification.status':
     case 'notification.readAll':
+    case 'notification.statusMany':
       return 'The notification';
     default:
       return 'The issue';

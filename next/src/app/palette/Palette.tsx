@@ -22,6 +22,7 @@ import {notify} from '../notices.ts';
 import {connectivity, onlineOnly} from '../online.ts';
 import {classicOfHere, requestSignOut, switchToClassic} from '../session.ts';
 import {activeHint, KEYMAP, shortcutHint, type ShortcutId, shortcuts} from '../shortcuts/index.ts';
+import type {KeyDef} from '../shortcuts/keymap.ts';
 import {type App, useApp} from '../store.ts';
 import {setThemePreference, themeState} from '../theme.ts';
 import {issueActions} from '../../features/issues/actions.ts';
@@ -93,7 +94,7 @@ const COMMANDS: PaletteCommand[] = [
   {id: 'new-repo', label: 'New repository', icon: BookPlus, keywords: 'create repo classic', classic: '/repo/create', run: () => undefined},
   {id: 'new-org', label: 'New organization', icon: Building2, keywords: 'create org team classic', classic: '/org/create', run: () => undefined},
   {id: 'explore', label: 'Explore repositories, people and organizations', icon: Compass, keywords: 'explore discover browse find public classic', classic: '/explore/repos', run: () => undefined},
-  {id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: 'help.shortcuts', keywords: 'help keys', run: (app) => {
+  {id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: 'help.shortcuts', aliases: ['help', 'shortcuts', 'keys', 'keyboard help'], run: (app) => {
     runInAction(() => {
       app.ui.shortcutsOpen = true;
     });
@@ -242,10 +243,11 @@ function PaletteBody({app, onChoose}: {app: App; onChoose: () => void}) {
   // The actions on the issues the keyboard is on (the list's selection or cursor, the open issue).
   const [target] = useState(() => untracked(() => issuesOf(app, app.ui.issueTarget)));
   // What the page on screen offers by key (inbox triage, board moves, save the view, comment…), as commands.
-  const [onPage] = useState(() => shortcuts.available().filter((id) => !PAGE_SKIP.has(id)));
+  const [onPage] = useState(() => shortcuts.available().filter(({id}) => !PAGE_SKIP.has(id)));
   const groups: Group[] = [];
+  // In a group, what can run comes first; what cannot (listed with its reason) after it.
   const add = (heading: string, rank: number, rows: Row[]) => {
-    if (rows.length) groups.push({heading, rank, rows});
+    if (rows.length) groups.push({heading, rank, rows: rows.some((r) => r.muted) ? [...rows.filter((r) => !r.muted), ...rows.filter((r) => r.muted)] : rows});
   };
   const best = (scores: number[]) => (scores.length ? Math.max(...scores) : -1);
   // Actions found by their label (every word at a word start) rank with the commands, above what merely contains the words.
@@ -270,11 +272,17 @@ function PaletteBody({app, onChoose}: {app: App; onChoose: () => void}) {
     },
   })));
 
-  const pageList = onPage.map((id) => ({id, s: matchName(KEYMAP[id].label)})).filter((x) => x.s >= 0);
-  add('On this page', words.length ? actionRank(best(pageList.map((x) => x.s))) : 80, pageList.map(({id}) => ({
-    value: `page:${id}`, icon: CornerDownRight, shortcut: shortcutHint(id), label: KEYMAP[id].label,
-    // After the palette closed (focus back on the page), as the key would.
-    run: () => requestAnimationFrame(() => {
+  // A page command is found by its label or its aliases ("remove the column"); what cannot run now is listed with why.
+  const pageList = onPage.map(({id, why}) => {
+    const def: KeyDef = KEYMAP[id];
+    return {id, why, s: Math.max(matchName(def.label), ...(def.aliases ?? []).map((a) => matchName(a)))};
+  }).filter((x) => x.s >= 0);
+  add('On this page', words.length ? actionRank(best(pageList.map((x) => x.s))) : 80, pageList.map(({id, why}) => ({
+    value: `page:${id}`, icon: CornerDownRight, shortcut: shortcutHint(id), label: KEYMAP[id].label, meta: why, muted: why !== undefined,
+    run: why !== undefined ? () => {
+      notify(app, {tone: 'neutral', title: why});
+    } : () => requestAnimationFrame(() => {
+      // After the palette closed (focus back on the page), as the key would.
       shortcuts.run(id);
     }),
   })));
@@ -393,10 +401,16 @@ function PaletteBody({app, onChoose}: {app: App; onChoose: () => void}) {
 
   // Best first; a stable sort keeps the listed order on ties.
   groups.sort((a, b) => b.rank - a.rank);
-  // The selection: the first row (never a destructive one) whenever the results change; the user's arrow keys move it.
+  // The selection: the first row whenever the results change; the user's arrow keys move it (they do not wrap: ArrowUp
+  // from the top never lands on the last row, "Sign out"). A destructive row is never the default: without a query the
+  // next row is; when it is what a query matches best ("sign"), nothing is selected, so Enter runs nothing.
   const values = groups.flatMap((g) => g.rows.map((r) => r.value));
   const sig = `${deferred}\u0000${values.join('\u0000')}`;
-  const first = groups.flatMap((g) => g.rows).find((r) => !r.destructive)?.value ?? '';
+  const rows = groups.flatMap((g) => g.rows);
+  // Without a query, a row that cannot run is not the default either (Enter would only say why). With one, the best
+  // match is, so that Enter never opens something else instead ("go to the code" off a repository says why).
+  const first = (words.length && rows[0]?.destructive ? undefined :
+    (rows.find((r) => !r.destructive && !(r.muted && !words.length)) ?? rows.find((r) => !r.destructive))?.value) ?? '';
   const [sel, setSel] = useState({sig: '', value: ''});
   let selected = sel.value;
   if (sel.sig !== sig) {
@@ -404,10 +418,10 @@ function PaletteBody({app, onChoose}: {app: App; onChoose: () => void}) {
     setSel({sig, value: first});
   }
   return (
-    <CommandRoot label="Command menu" value={selected} onValueChange={(v) => {
+    <CommandRoot label="Command menu" loop={false} value={selected} onValueChange={(v) => {
       setSel({sig, value: v});
     }}>
-      <CommandInput value={query} onValueChange={setQuery} placeholder="Search repositories, issues, files, people and commands…"/>
+      <CommandInput value={query} onValueChange={setQuery} placeholder="Search or type a command…"/>
       <CommandList>
         {!groups.length && <CommandEmpty>{!words.length || !more.asked ? 'Nothing found on this device.' : more.answered ? 'Nothing found on this device or on Forgejo.' : 'Nothing on this device. Asking Forgejo…'}</CommandEmpty>}
         {groups.map((g) => (

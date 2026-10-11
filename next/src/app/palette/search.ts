@@ -136,13 +136,17 @@ export function scoreNamed(name: string, context: string, words: readonly string
   return own ? total : -1;
 }
 
-/** A repository named by the query outranks everything found by its name: exactly (6), or by the name's start (4). */
+/**
+ * A repository named by the query outranks everything found by its name: exactly (6), or by the name's start (4).
+ * "acme atlas" names acme/atlas as "acme/atlas" does (owner and name as two words).
+ */
 export function repoScore(fullName: string, name: string, words: readonly string[]): number {
   const s = score(fullName, words);
   if (s < 0) return s;
   const q = words.join(' ');
-  if (q === name || q === fullName) return 6 + s;
-  return name.startsWith(q) || fullName.startsWith(q) ? 4 + s : s;
+  const path = words.join('/');
+  if (q === name || q === fullName || path === fullName) return 6 + s;
+  return name.startsWith(q) || fullName.startsWith(q) || (words.length > 1 && fullName.startsWith(path)) ? 4 + s : s;
 }
 
 interface Ranked<T> {

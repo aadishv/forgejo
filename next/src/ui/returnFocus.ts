@@ -12,6 +12,15 @@ function inOpenDialog(el: Element): boolean {
   return false;
 }
 
+/** Whether an element is inside a dialog that is closing (data-state="closed" while it fades out). */
+function inClosingDialog(el: Element): boolean {
+  for (let p: Element | null = el; p; p = p.parentElement) {
+    const role = p.getAttribute('role');
+    if (role === 'dialog' || role === 'alertdialog') return p.getAttribute('data-state') === 'closed';
+  }
+  return false;
+}
+
 /**
  * Radix returns focus to a dialog's trigger, but a dialog opened from the
  * keyboard (⌘K, ?) has none: focus would fall to <body>. These handlers
@@ -31,10 +40,12 @@ export function useReturnFocus(restore: () => boolean = () => true): {onOpenAuto
       // control that opened the dialog (whose tooltip would then cover the new page).
       if (!restore()) {
         e.preventDefault();
-        // Unless the command opened another dialog (⌘K → Create an issue): its field keeps the focus, and what the
-        // user typed there meanwhile (QA verify3: blurred at about 300 ms, the title was lost).
+        // Only the opener (the sidebar link) or the closing dialog's own field lets go: a field the command focused
+        // keeps the focus, and what the user typed there meanwhile — another dialog's (⌘K → Create an issue: QA
+        // verify3, blurred at about 300 ms, the title was lost) or the page's (⌘K → Add a column: its name field
+        // closed on that blur).
         const a = document.activeElement;
-        if (a instanceof HTMLElement && a !== document.body && !inOpenDialog(a)) a.blur();
+        if (a instanceof HTMLElement && a !== document.body && !inOpenDialog(a) && (a === el || inClosingDialog(a))) a.blur();
         return;
       }
       if (el?.isConnected) {

@@ -42,10 +42,13 @@ export function ShortcutsDialog() {
           <section key={scope} className="flex flex-col gap-1">
             <SectionHeading>{`${SCOPE_LABELS[scope]}${active.includes(scope) && scope !== 'global' ? ' · on this page' : ''}`}</SectionHeading>
             <dl className="flex flex-col">
-              {(byScope.get(scope) ?? []).map((id) => (
-                <div key={id} className="flex min-h-control items-center justify-between gap-4 py-1 text-base">
-                  <dt className="text-fg">{KEYMAP[id].label}</dt>
-                  <dd><Shortcut keys={shortcutHint(id)}/></dd>
+              {/* One row per action: two keys for the same thing (⌫ or Alt ↑: up a directory) share it. */}
+              {byLabel(byScope.get(scope) ?? []).map(([label, ids]) => (
+                <div key={label} className="flex min-h-control items-center justify-between gap-4 py-1 text-base">
+                  <dt className="text-fg">{label}</dt>
+                  <dd className="flex items-center gap-1.5 text-sm text-fg-subtle">
+                    {ids.map((id, i) => <span key={id} className="flex items-center gap-1.5">{i > 0 && 'or'}<Shortcut keys={shortcutHint(id)}/></span>)}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -54,6 +57,13 @@ export function ShortcutsDialog() {
       </div>
     </Dialog>
   );
+}
+
+/** Shortcuts grouped by what they do, in the keymap's order. */
+function byLabel(ids: readonly ShortcutId[]): [string, ShortcutId[]][] {
+  const out = new Map<string, ShortcutId[]>();
+  for (const id of ids) out.set(KEYMAP[id].label, [...out.get(KEYMAP[id].label) ?? [], id]);
+  return [...out];
 }
 
 /** Active scopes first (innermost first), then the rest in the keymap's order. */

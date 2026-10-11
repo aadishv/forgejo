@@ -68,8 +68,12 @@ function leaving(el: Element): boolean {
 interface Binding {
   id: ShortcutId;
   run: () => void;
-  /** Whether it applies now (Open with a row under the cursor, a card move with a card): not, it is neither run nor offered. */
-  when: (() => boolean) | undefined;
+  /**
+   * Whether it applies now: true; false, it is neither run nor offered (Open without a row under the cursor); a
+   * string, it cannot run and that is why (the palette lists it with the reason; its key still reaches the handler,
+   * which says it).
+   */
+  when: (() => boolean | string) | undefined;
   seq: number;
 }
 
@@ -94,7 +98,7 @@ export class ShortcutRegistry {
   }
 
   /** Binds a handler to a shortcut (applying while `when` says so); returns the unbind function. */
-  bind(id: ShortcutId, run: () => void, when?: () => boolean): () => void {
+  bind(id: ShortcutId, run: () => void, when?: () => boolean | string): () => void {
     const b: Binding = {id, run, when, seq: ++this.bindSeq};
     this.bindings.push(b);
     return () => {
@@ -122,13 +126,18 @@ export class ShortcutRegistry {
    * The bound shortcuts whose scope is active now, outside global (what the
    * view on screen offers: the palette lists them as commands).
    */
-  available(): ShortcutId[] {
-    const seen = new Set<ShortcutId>();
+  available(): {id: ShortcutId; why?: string}[] {
+    const seen = new Map<ShortcutId, string | undefined>();
     for (const b of this.bindings) {
       const def = this.keymap[b.id];
-      if (def && def.scope !== 'global' && this.depth(def.scope) >= 0 && (b.when?.() ?? true)) seen.add(b.id);
+      if (!def || def.scope === 'global' || this.depth(def.scope) < 0) continue;
+      const w = b.when?.() ?? true;
+      if (w === false) continue;
+      // Runnable by one binding: runnable.
+      if (w === true) seen.set(b.id, undefined);
+      else if (!seen.has(b.id)) seen.set(b.id, w);
     }
-    return [...seen];
+    return [...seen].map(([id, why]) => (why === undefined ? {id} : {id, why}));
   }
 
   /**
@@ -151,7 +160,7 @@ export class ShortcutRegistry {
     let best: Binding | undefined;
     let depth = -1;
     for (const b of this.bindings) {
-      if (b.id !== id || !(b.when?.() ?? true)) continue;
+      if (b.id !== id || (b.when?.() ?? true) === false) continue;
       const def = this.keymap[b.id];
       const d = def ? this.depth(def.scope) : -1;
       if (d > depth || (d === depth && best && b.seq > best.seq)) {
@@ -185,7 +194,7 @@ export class ShortcutRegistry {
     const out: {binding: Binding; keys: string; depth: number}[] = [];
     for (const b of this.bindings) {
       const def = this.keymap[b.id];
-      if (!def || (restricted && !def.anywhere) || (def.page && !onPage) || !(b.when?.() ?? true)) continue;
+      if (!def || (restricted && !def.anywhere) || (def.page && !onPage) || (b.when?.() ?? true) === false) continue;
       const depth = this.depth(def.scope);
       if (depth >= 0) out.push({binding: b, keys: def.keys, depth});
     }

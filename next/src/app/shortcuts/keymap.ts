@@ -20,6 +20,8 @@ export interface KeyDef {
   keys: string;
   /** What it does (shortcuts help, palette). */
   label: string;
+  /** Other names the palette finds it by ("remove column" for "Delete the column"). */
+  aliases?: readonly string[];
   scope: Scope;
   /**
    * Also while typing in a text field or inside an open menu or dialog
@@ -71,9 +73,9 @@ export const KEYMAP = {
   'board.moveUp': {keys: 'shift+k', label: 'Move the card up', scope: 'board'},
   'board.moveDown': {keys: 'shift+j', label: 'Move the card down', scope: 'board'},
   // Commands without keys (keys ''): the palette offers them on a board, the help does not list them.
-  'board.addColumn': {keys: '', label: 'Add a column', scope: 'board'},
-  'board.renameColumn': {keys: '', label: 'Rename the column', scope: 'board'},
-  'board.deleteColumn': {keys: '', label: 'Delete the column', scope: 'board'},
+  'board.addColumn': {keys: '', label: 'Add a column', scope: 'board', aliases: ['new column', 'create a column']},
+  'board.renameColumn': {keys: '', label: 'Rename the column', scope: 'board', aliases: ['edit the column']},
+  'board.deleteColumn': {keys: '', label: 'Delete the column', scope: 'board', aliases: ['remove the column']},
   'issue.state': {keys: 's', label: 'Change the state', scope: 'issue'},
   'issue.labels': {keys: 'l', label: 'Labels', scope: 'issue'},
   'issue.assignee': {keys: 'a', label: 'Assignees', scope: 'issue'},
@@ -88,9 +90,9 @@ export const KEYMAP = {
   'diff.nextFile': {keys: ']', label: 'Next file', scope: 'diff'},
   'review.start': {keys: 'r', label: 'Start a review', scope: 'diff'},
   'diff.viewed': {keys: 'v', label: 'Mark the file viewed', scope: 'diff'},
-  'diff.lineDown': {keys: 'arrowdown', label: 'Next line', scope: 'diff', local: true},
-  'diff.lineUp': {keys: 'arrowup', label: 'Previous line', scope: 'diff', local: true},
-  'diff.lineComment': {keys: 'enter', label: 'Comment on the line', scope: 'diff', local: true},
+  'diff.lineDown': {keys: 'arrowdown', label: 'Next line', scope: 'diff', page: true},
+  'diff.lineUp': {keys: 'arrowup', label: 'Previous line', scope: 'diff', page: true},
+  'diff.lineComment': {keys: 'enter', label: 'Comment on the line', scope: 'diff', page: true},
   'editor.submit': {keys: 'mod+enter', label: 'Save or send', scope: 'editor', local: true},
 } as const satisfies Record<string, KeyDef>;
 

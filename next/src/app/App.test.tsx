@@ -218,7 +218,7 @@ describe('signed in', () => {
     const {router, app} = await renderApp('/', signedIn());
     key('k', {ctrlKey: true});
     expect(app.ui.paletteOpen).toBe(true);
-    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    const input = await screen.findByPlaceholderText(/^Search or type a command/);
     fireEvent.change(input, {target: {value: 'footer'}});
     const option = await screen.findByRole('option', {name: /Footer links are broken/});
     expect(option.textContent).toContain('acme/website#7');
@@ -235,7 +235,7 @@ describe('signed in', () => {
   test('the palette selects its first row (never Sign out), and an exact reference first', async () => {
     await renderApp('/', signedIn());
     key('k', {ctrlKey: true});
-    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    const input = await screen.findByPlaceholderText(/^Search or type a command/);
     const selected = () => document.querySelector('[cmdk-item][data-selected="true"]')?.textContent ?? '';
     // Never by default; typed out by name, Enter runs it (signing out still asks when changes are unsynced).
     fireEvent.change(input, {target: {value: 'sign'}});
@@ -273,7 +273,7 @@ describe('signed in', () => {
     const issues = screen.getByRole('link', {name: /My issues/});
     issues.focus();
     key('k', {ctrlKey: true});
-    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    const input = await screen.findByPlaceholderText(/^Search or type a command/);
     await waitFor(() => {
       expect(document.activeElement).toBe(input);
     });
@@ -288,7 +288,7 @@ describe('signed in', () => {
     const issues = screen.getByRole('link', {name: /My issues/});
     issues.focus();
     key('k', {ctrlKey: true});
-    const input = await screen.findByPlaceholderText(/^Search repositories, issues/);
+    const input = await screen.findByPlaceholderText(/^Search or type a command/);
     fireEvent.change(input, {target: {value: 'go to the inbox'}});
     await waitFor(() => {
       expect(screen.getByRole('option', {name: /Go to the inbox/})).toBeTruthy();
@@ -298,7 +298,7 @@ describe('signed in', () => {
       expect(router.state.location.pathname).toBe('/notifications');
     });
     await waitFor(() => {
-      expect(screen.queryByPlaceholderText(/^Search repositories, issues/)).toBeNull();
+      expect(screen.queryByPlaceholderText(/^Search or type a command/)).toBeNull();
     });
     expect(document.activeElement).not.toBe(issues);
   });

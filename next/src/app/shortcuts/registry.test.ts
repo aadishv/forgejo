@@ -200,9 +200,10 @@ test('scopes a view pushes together: the innermost decides a key they share (a b
 test('views that push several scopes: every key two of them share is meant, and the innermost one wins', () => {
   // [scopes from outer to inner, keys the inner one takes over on purpose]
   // Esc: a list clears its selection; an issue page (which pushes no list scope) goes back. A list pushes the issue
-  // scope for the pickers only and never binds issue.back. (Enter in a diff's lines and on a board's column is theirs:
-  // local keys, handled by the focused element first.)
-  const views: [string[], string[]][] = [[['list', 'issue'], ['escape']], [['list', 'inbox'], []], [['list', 'issue', 'board'], ['escape', 'l']], [['list', 'diff'], []]];
+  // scope for the pickers only and never binds issue.back. Enter on a board's column is the column's (a local key).
+  // Enter in a pull request's Files: the line under the diff's cursor (bound only while there is one), else the file
+  // list's row.
+  const views: [string[], string[]][] = [[['list', 'issue'], ['escape']], [['list', 'inbox'], []], [['list', 'issue', 'board'], ['escape', 'l']], [['list', 'diff'], ['enter']]];
   for (const [scopes, intended] of views) {
     const byKey = new Map<string, string[]>();
     for (const [id, def] of Object.entries(KEYMAP)) {
@@ -223,13 +224,28 @@ test('available() lists the bound shortcuts of active scopes; run() runs the inn
   r.bind('create', () => ran.push('create'));
   expect(r.available()).toEqual([]);
   const pop = r.pushScope('inbox');
-  expect(r.available()).toEqual(['inbox.read']);
+  expect(r.available()).toEqual([{id: 'inbox.read'}]);
   expect(r.run('inbox.read')).toBe(true);
   pop();
   expect(r.run('inbox.read')).toBe(false);
   off();
   expect(r.run('create')).toBe(true);
   expect(ran).toEqual(['read', 'create']);
+});
+
+test('available() names why a command cannot run (a string `when`); false leaves it out; its key still runs it', () => {
+  const r = new ShortcutRegistry({apple: false});
+  let why: boolean | string = 'The default column cannot be deleted.';
+  let ran = 0;
+  r.bind('board.deleteColumn', () => ran++, () => why);
+  r.bind('board.moveDown', () => ran++, () => false);
+  r.pushScope('board');
+  expect(r.available()).toEqual([{id: 'board.deleteColumn', why: 'The default column cannot be deleted.'}]);
+  expect(r.run('board.deleteColumn')).toBe(true);
+  expect(r.run('board.moveDown')).toBe(false);
+  why = true;
+  expect(r.available()).toEqual([{id: 'board.deleteColumn'}]);
+  expect(ran).toBe(1);
 });
 
 test('shadowed(): a key an inner scope has taken does not advertise the outer binding (no "Labels L" on a board)', () => {

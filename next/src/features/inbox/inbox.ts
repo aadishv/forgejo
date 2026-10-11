@@ -10,7 +10,8 @@ import type {Notification} from '../../protocol/types.gen.ts';
 
 export type InboxRow =
   | {type: 'group'; key: string; label: string; count: number}
-  | {type: 'note'; id: number};
+  /** inHeader: its group's header names its repository (the row gives the number only). */
+  | {type: 'note'; id: number; inHeader?: true};
 
 export interface InboxView {
   /** Unread only (pinned notifications are not unread: they leave this view). */
@@ -62,11 +63,11 @@ export function inboxRows(notes: Iterable<Notification>, view: InboxView, ctx: I
   rest.sort(newestFirst);
   const rows: InboxRow[] = [];
   const ids: number[] = [];
-  const push = (key: string, label: string, list: readonly Notification[]) => {
+  const push = (key: string, label: string, list: readonly Notification[], inHeader = false) => {
     if (!list.length) return;
     rows.push({type: 'group', key, label, count: list.length});
     for (const n of list) {
-      rows.push({type: 'note', id: n.id});
+      rows.push(inHeader ? {type: 'note', id: n.id, inHeader} : {type: 'note', id: n.id});
       ids.push(n.id);
     }
   };
@@ -87,7 +88,11 @@ export function inboxRows(notes: Iterable<Notification>, view: InboxView, ctx: I
     if (!g) groups.set(n.repo_id, g = []);
     g.push(n);
   }
-  for (const [repoId, list] of groups) push(`repo:${String(repoId)}`, ctx.repoName(repoId) || 'Other', list);
+  // Pinned rows and the "Other" group (repositories not on this device) keep their repository's name on the row.
+  for (const [repoId, list] of groups) {
+    const name = ctx.repoName(repoId);
+    push(`repo:${String(repoId)}`, name || 'Other', list, Boolean(name));
+  }
   return {rows, ids};
 }
 
