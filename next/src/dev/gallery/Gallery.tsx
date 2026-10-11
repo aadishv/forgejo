@@ -6,16 +6,17 @@
 
 import './gallery.css';
 import {
-  Archive, ArrowUpRight, CircleDashed, CircleDot, Copy, Star, SignalHigh, Flag, Inbox, Moon, MoreHorizontal, Pencil, Plus, Search, Sun, SunMoon, Tag,
+  Archive, ArrowUpRight, ChevronDown, CircleDashed, Code2, CircleDot, Copy, Star, SignalHigh, Flag, Inbox, Moon, MoreHorizontal, Pencil, Plus, Search, Sun, SunMoon, Tag,
   Trash2,
 } from 'lucide-react';
 import {useState, type ReactNode} from 'react';
 import {getThemePreference, setThemePreference} from '../../app/theme.ts';
 import type {ThemePreference} from '../../app/splash.ts';
+import {CodeMenuPanel} from '../../features/repo/CodeMenu.tsx';
 import {
   AsideLink, AsideLinks, AsideSection, ShareBar, Avatar, AvatarGroup, Badge, Button, Callout, Entry, EntryList, Hint, LabelDot, LabelIcon, ListGroupHeader, Notice, Property, PropertyButton, PropertyEmpty, PropertyList,
   PropertyValue, ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
-  ContextMenuTrigger, Dialog, DialogClose, DialogTrigger, EmptyState, Icon, IconButton, Input, LabelChip, ListRow, Menu,
+  ContextMenuTrigger, CopyField, Dialog, DialogClose, DialogTrigger, EmptyState, Icon, IconButton, Input, LabelChip, ListRow, Menu,
   MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger,
   AnsiText, BlameCell, CodeFileHeader, CodeLine, CodeTokens, DiffStat, LineNo, StepHeader, StatusDot, TabLink, TabNav,
   NavGroup, NavHeading, NavItem, Popover, PopoverContent, PopoverTrigger, ProseSource, ResizeHandle, SectionHeading, Shortcut, Skeleton, Status, TextArea, TooltipProvider,
@@ -103,6 +104,7 @@ export default function Gallery() {
           <Button variant="primary" icon={Plus} tooltip="Create issue" shortcut="C">New issue</Button>
           <Button>Secondary</Button>
           <Button variant="ghost">Ghost</Button>
+          <Button variant="success" icon={Code2}>Code</Button>
           <Button variant="danger" icon={Trash2}>Delete</Button>
           <Button disabled>Disabled</Button>
           <Button size="sm" variant="primary">Small</Button>
@@ -348,6 +350,22 @@ export default function Gallery() {
             <CodeLine gutter={<><BlameCell first summary="Fix the parser" meta="3 d"/><LineNo n={3}/></>}>blamed line</CodeLine>
             <StepHeader expanded onToggle={() => undefined} mark={<StatusDot tone="success"/>} meta="1 m 5 s">Run tests</StepHeader>
             <CodeLine gutter={<LineNo n={4}/>}><AnsiText spans={[{text: 'PASS ', color: 2, bold: true}, {text: 'error ', color: 1, bold: false}, {text: 'plain', color: 0, bold: false}]}/></CodeLine>
+          </div>
+        </Section>
+
+        <Section title="Code menu (the overview's file bar), copy field">
+          <Popover>
+            <PopoverTrigger asChild><Button size="sm" variant="success" icon={Code2}>Code<Icon icon={ChevronDown} size="sm"/></Button></PopoverTrigger>
+            <PopoverContent width="md" align="start">
+              <CodeMenuPanel https="https://code.example/acme/website.git" ssh="git@code.example:acme/website.git" onCopy={() => undefined}
+                archives={[{format: 'zip', href: '#code'}, {format: 'tar.gz', href: '#code'}]}/>
+            </PopoverContent>
+          </Popover>
+          <div className="w-80 rounded-lg border border-border p-2">
+            <CodeMenuPanel https="https://code.example/acme/website.git" onCopy={() => undefined} archives={[]}/>
+          </div>
+          <div className="w-64">
+            <CopyField value="https://code.example/acme/a-rather-long-repository-name.git" label="Clone URL" copyLabel="Copy the clone URL" onCopy={() => undefined}/>
           </div>
         </Section>
 

@@ -155,7 +155,35 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/pulls/2/files":                                   true,
 		"/user2/repo1/pulls/2/checks":                                  false,
 		"/user2/repo1/src/branch/master/../../settings":                false,
-		"/user2/repo1/wiki":                                            false,
+		// The wiki (its page addresses; the classic wiki's raw files and search stay classic).
+		"/user2/repo1/wiki":                     true,
+		"/user2/repo1/wiki/":                    true,
+		"/user2/repo1/wiki/Home":                true,
+		"/user2/repo1/wiki/Getting-Started.-":   true,
+		"/user2/repo1/wiki/-/pages":             true,
+		"/user2/repo1/wiki/-/new":               true,
+		"/user2/repo1/wiki/Home/-/edit":         true,
+		"/user2/repo1/wiki/-/history":           false,
+		"/user2/repo1/wiki/Home/-/delete":       false,
+		"/user2/repo1/wiki/raw":                 false,
+		"/user2/repo1/wiki/raw/logo.png":        false,
+		"/user2/repo1/wiki/search":              false,
+		"/user2/repo1/wiki/_pages":              false,
+		"/user2/repo1/wiki/..":                  false,
+		"/user2/repo1/wiki/commit/65f1bf27bc3b": false,
+		"/user2/repo1/wiki/a/b":                 false,
+		"/user2/repo1.wiki/wiki/Home":           false,
+		// The activity pages.
+		"/user2/repo1/activity":                   true,
+		"/user2/repo1/activity/monthly":           true,
+		"/user2/repo1/activity/yearly":            true,
+		"/user2/repo1/activity/hourly":            false, // no such period: the classic page (which shows a week)
+		"/user2/repo1/activity/contributors":      true,
+		"/user2/repo1/activity/code-frequency":    true,
+		"/user2/repo1/activity/recent-commits":    true,
+		"/user2/repo1/activity/contributors/data": false, // the classic graphs' JSON
+		"/user2/repo1/activity/weekly/x":          false,
+		"/user2/repo1/activity_author_data":       false,
 	} {
 		assert.Equal(t, want, spaRoute(p), p)
 	}
@@ -269,7 +297,11 @@ func TestSPAServing(t *testing.T) {
 			}
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2/repo1", opted...).Code, "a repository's home")
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2?tab=repositories", opted...).Code, "an owner's page")
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic"} {
+			for _, p := range []string{"/user2/repo1/wiki", "/user2/repo1/wiki/?action=_pages", "/user2/repo1/wiki/Home?action=_edit", "/user2/repo1/wiki/-/pages"} {
+				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
+			}
+			// A wiki page's revisions are the classic page's.
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)
@@ -491,4 +523,22 @@ func TestInsertConfig(t *testing.T) {
 	out, err := json.Marshal(map[string]string{"a": "</script><b>&"})
 	require.NoError(t, err)
 	assert.False(t, bytes.Contains(out, []byte("</script>")), "the config JSON is HTML-safe: %s", out)
+}
+
+func TestSSHClonePrefix(t *testing.T) {
+	defer test.MockVariableValue(&setting.SSH, setting.SSH)()
+	defer test.MockVariableValue(&setting.Repository.UseCompatSSHURI, false)()
+	setting.SSH.Disabled = false
+	setting.SSH.User = "git"
+	setting.SSH.Domain = "code.example"
+	setting.SSH.Port = 22
+	assert.Equal(t, "git@code.example:", sshClonePrefix())
+	setting.SSH.Port = 2222
+	assert.Equal(t, "ssh://git@code.example:2222/", sshClonePrefix())
+	setting.SSH.Port = 22
+	setting.Repository.UseCompatSSHURI = true
+	assert.Equal(t, "ssh://git@code.example/", sshClonePrefix())
+	setting.SSH.Disabled = true
+	assert.Empty(t, sshClonePrefix())
+	assert.Empty(t, nextConfig().SSHClonePrefix)
 }

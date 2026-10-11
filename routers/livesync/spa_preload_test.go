@@ -23,6 +23,10 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/projects/4":                 "src/features/board/BoardView.tsx",
 		"/-/next/code/acme/atlas/src/main/-": "src/features/code/CodePage.tsx",
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
+		"/acme/atlas/wiki":                   "src/features/wiki/WikiPage.tsx",
+		"/acme/atlas/wiki/Home/-/edit":       "src/features/wiki/WikiPage.tsx",
+		"/acme/atlas/activity":               "src/features/activity/Activity.tsx",
+		"/acme/atlas/activity/contributors":  "src/features/activity/Activity.tsx",
 		"/acme/atlas/labels":                 "src/features/meta/LabelsPage.tsx",
 		"/acme/atlas/milestones":             "src/features/meta/MilestonesPage.tsx",
 		"/acme/atlas/milestones/new":         "src/features/meta/MilestoneForm.tsx",
@@ -35,7 +39,7 @@ func TestRouteModules(t *testing.T) {
 		}
 	}
 	assert.Nil(t, routeModules("/-/next/"))
-	assert.Nil(t, routeModules("/acme/atlas/wiki/x"))
+	assert.Nil(t, routeModules("/acme/atlas/settings/x"))
 	assert.Nil(t, routeModules("/acme/atlas/milestone/3/x"))
 	assert.Nil(t, routeModules("/acme/atlas/labels/x"))
 }

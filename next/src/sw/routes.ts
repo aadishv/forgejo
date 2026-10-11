@@ -5,6 +5,7 @@
 // functions (tested in routes.test.ts against B8's spaRoutes table).
 
 import {parseCodePath} from '../code/refs.ts';
+import {parseWikiRest} from '../features/wiki/paths.ts';
 
 /** The service worker's caches are named with this prefix and the build version. */
 export const CACHE_PREFIX = 'forgejo-next-';
@@ -55,9 +56,11 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
 /**
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
  * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
- * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/labels`, `/{owner}/{repo}/milestones[/new]`,
- * `/{owner}/{repo}/milestone/{n}[/edit]`. `?ui=classic` asks for the classic page, and so does an owner's profile tab
- * (`/{owner}?tab=activity`; the app shows the repositories). Keep in step with routers/livesync/spa.go.
+ * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/activity[/{period or graph}]`, the wiki (`/{owner}/{repo}/wiki[/…]`),
+ * `/{owner}/{repo}/labels`, `/{owner}/{repo}/milestones[/new]`, `/{owner}/{repo}/milestone/{n}[/edit]`,
+ * code addresses. `?ui=classic` asks for the classic page, and so does an owner's profile tab
+ * (`/{owner}?tab=activity`; the app shows the repositories) or a wiki page's revisions (`?action=_revision`).
+ * Keep in step with routers/livesync/spa.go.
  */
 export function isSpaRoute(path: string, search = ''): boolean {
   const q = new URLSearchParams(search);
@@ -72,6 +75,8 @@ export function isSpaRoute(path: string, search = ''): boolean {
   const [owner = '', repo = '', kind, n] = segs;
   if (!isOwnerName(owner) || !NAME.test(repo)) return false;
   if (kind === undefined) return true;
+  // The wiki's pages and views; a page's revisions are the classic page's (spa.go wikiClassic).
+  if (kind === 'wiki') return parseWikiRest(segs.slice(3).map(decodeSegment)) !== undefined && q.get('action') !== '_revision';
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.
   if (codeAddress(segs.slice(2))) return true;
   // Labels, milestones, a milestone and its form (features/meta).
@@ -79,10 +84,27 @@ export function isSpaRoute(path: string, search = ''): boolean {
   if (kind === 'milestones') return segs.length === 3 || (segs.length === 4 && n === 'new');
   if (kind === 'milestone') return /^[1-9]\d{0,17}$/.test(n ?? '') && (segs.length === 4 || (segs.length === 5 && segs[4] === 'edit'));
   if (segs.length > 4) return false;
+  if (kind === 'activity') return n === undefined || ACTIVITY_PAGES.has(n);
   if (kind !== 'issues' && kind !== 'pulls') return false;
   // An issue created offline is at "new-<uuid>" until Forgejo numbers it (features/issue/paths.ts TEMP_PATH).
   return n === undefined || /^[1-9]\d{0,17}$/.test(n) || (kind === 'issues' && TEMP_ISSUE.test(n));
 }
+
+function decodeSegment(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * What may follow `/{owner}/{repo}/activity`: a period of the Pulse (spa.go activityPeriods,
+ * features/activity/pulse.ts PERIODS) or one of its graphs.
+ */
+const ACTIVITY_PAGES = new Set([
+  'daily', 'halfweekly', 'weekly', 'monthly', 'quarterly', 'semiyearly', 'yearly', 'contributors', 'code-frequency', 'recent-commits',
+]);
 
 /** spa.go `codeAddress`: what follows a repository in a code page's address (the app's code views mirror it). */
 function codeAddress(rest: string[]): boolean {
