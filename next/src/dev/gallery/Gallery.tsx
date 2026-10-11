@@ -6,14 +6,14 @@
 
 import './gallery.css';
 import {
-  Archive, ArrowUpRight, CircleDashed, CircleDot, Copy, SignalHigh, Flag, Inbox, Moon, MoreHorizontal, Pencil, Plus, Search, Sun, SunMoon, Tag,
+  Archive, ArrowUpRight, CircleDashed, CircleDot, Copy, Star, SignalHigh, Flag, Inbox, Moon, MoreHorizontal, Pencil, Plus, Search, Sun, SunMoon, Tag,
   Trash2,
 } from 'lucide-react';
 import {useState, type ReactNode} from 'react';
 import {getThemePreference, setThemePreference} from '../../app/theme.ts';
 import type {ThemePreference} from '../../app/splash.ts';
 import {
-  Avatar, AvatarGroup, Badge, Button, Callout, Entry, EntryList, Hint, LabelDot, LabelIcon, ListGroupHeader, Notice, Property, PropertyButton, PropertyEmpty, PropertyList,
+  AsideLink, AsideLinks, AsideSection, ShareBar, Avatar, AvatarGroup, Badge, Button, Callout, Entry, EntryList, Hint, LabelDot, LabelIcon, ListGroupHeader, Notice, Property, PropertyButton, PropertyEmpty, PropertyList,
   PropertyValue, ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
   ContextMenuTrigger, Dialog, DialogClose, DialogTrigger, EmptyState, Icon, IconButton, Input, LabelChip, ListRow, Menu,
   MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger,
@@ -157,6 +157,26 @@ export default function Gallery() {
               <Entry leading={<Icon icon={Inbox}/>} title="Adding the label “bug”" meta="#12 · dev/big" description="Sent when you are back online." actions={<IconButton size="sm" icon={Search} label="Discard"/>}/>
               <Entry title="Posting a comment" meta="#3 · dev/big" description="Forbidden."/>
             </EntryList>
+          </div>
+        </Section>
+
+        <Section title="Side pane: sections, links with counts, share bar">
+          <div className="flex w-pane flex-col">
+            <AsideSection title="About">
+              <AsideLinks label="Links">
+                <AsideLink icon={Star} count={12}><a href="#tokens">stars</a></AsideLink>
+                <AsideLink icon={ArrowUpRight} tone="accent"><a href="#tokens">example.com</a></AsideLink>
+              </AsideLinks>
+            </AsideSection>
+            <AsideSection title="Releases" count={3}>
+              <AsideLinks><AsideLink icon={Tag} count={4}><a href="#tokens">tags</a></AsideLink></AsideLinks>
+            </AsideSection>
+            <AsideSection title="Languages">
+              <ShareBar label="Languages" shares={[
+                {label: 'Go', value: 50, tone: 1}, {label: 'TypeScript', value: 25, tone: 2}, {label: 'CSS', value: 10, tone: 3},
+                {label: 'Shell', value: 6, tone: 4}, {label: 'Makefile', value: 4, tone: 5}, {label: 'Other', value: 5, tone: 'other'},
+              ]}/>
+            </AsideSection>
           </div>
         </Section>
 

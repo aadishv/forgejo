@@ -77,6 +77,16 @@
   --color-diff-del: #fcecee;
   --color-diff-del-strong: #f9dfe3;
 
+  /* Categorical series (a repository's languages bar): fixed order, assigned slot by slot, never cycled (a sixth
+   * share folds into "the rest", fg-subtle). Validated as a set for colour-vision deficiency and separation on
+   * the surface (the dataviz palette's first five slots); slots 3–5 are under 3:1 on the light surface, so a
+   * chart using them always has a legend with names and values. */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+  --color-series-5: #e87ba4;
+
   /* ── Typography. System fonts only: no webfont request on the boot path. ── */
   --font-sans:
     -apple-system, blinkmacsystemfont, "Segoe UI Variable Text", "Segoe UI", system-ui, roboto,
@@ -274,6 +284,11 @@
   --color-diff-add-strong: #1a3623;
   --color-diff-del: #2b171a;
   --color-diff-del-strong: #3a1c21;
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  --color-series-4: #c98500;
+  --color-series-5: #d55181;
 }
 
 @media (prefers-reduced-motion: reduce) {
