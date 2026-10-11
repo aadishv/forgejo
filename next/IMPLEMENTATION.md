@@ -5708,10 +5708,11 @@ below is the permanent part.
   Issues, Pull requests, Actions, Projects, Wiki, Activity (GitHub's Insights) and, for admins, Settings. The Overview
   and Code tabs were one page: Code leads to `/{owner}/{repo}` and is current there and on every code view (source,
   blame, history, a commit, compare, branches, tags, releases; `tabOfPath`, tested); the Commits, Branches, Tags and
-  Releases tabs are gone. Projects is the board when the repository has one open board, a menu of them when it has
+  Releases tabs are gone. The home's header says "Code" like its tab; its browser tab is `owner/repo`. Projects is the board when the repository has one open board, a menu of them when it has
   more, the classic list otherwise. Wiki, Activity and Settings open the classic pages (`data-classic`, the
   `CLASSIC_HINT` tooltip), one entry each to repoint when they are ported. Tabs that do not fit go into "More"
-  (`TabNav`'s `more`: widths measured, `fitCount` tested), which also has "This page" in the classic UI. Above the
+  (`TabNav`'s `more`: widths measured; the current tab stays in the bar in place of the last one that would fit, as
+  on GitHub; `shownTabs` tested), which also has "This page" in the classic UI. Above the
   overview's files, as on GitHub: the branch picker (`features/code/RefMenu.tsx`, the code views' picker, moved out of
   `Src.tsx` so the overview does not load the source view; choosing a branch opens its tree), "N branches" (the
   branches page) and, on the latest commit's bar, History (`commits/branch/<default>`); no count of commits: the pool

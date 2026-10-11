@@ -164,6 +164,11 @@ describe('signed in', () => {
     // GitHub's order; the home is the Code tab. Pages only the classic UI has are marked (data-classic).
     expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Code', 'Issues', 'Pull requests', 'Actions', 'Projects', 'Wiki', 'Activity']);
     expect(within(tabs).getByRole('link', {name: 'Code'}).getAttribute('aria-current')).toBe('page');
+    // The home is titled like its tab; the browser tab names the repository alone.
+    expect(screen.getByRole('heading', {level: 1}).textContent).toBe('Code');
+    await waitFor(() => {
+      expect(document.title).toBe('acme/website · Forgejo');
+    });
     expect(within(tabs).getByRole('link', {name: 'Wiki'}).getAttribute('href')).toBe('/acme/website/wiki');
     expect(within(tabs).getByRole('link', {name: 'Wiki'}).hasAttribute('data-classic')).toBe(true);
     expect(within(tabs).getByRole('button', {name: 'More of this repository'})).toBeTruthy();
@@ -190,7 +195,11 @@ describe('signed in', () => {
       terminate = () => undefined;
     });
     await renderApp('/acme/website', s);
-    expect(screen.getByRole('button', {name: 'Ref: main'})).toBeTruthy();
+    // At once, above the files panel, while its tree is still loading (no layout shift when it arrives).
+    const picker = screen.getByRole('button', {name: 'Ref: main'});
+    const files = screen.getByRole('region', {name: 'Files'});
+    expect(picker.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(files.contains(picker)).toBe(false);
     expect(screen.getByRole('link', {name: '2 branches'}).getAttribute('href')).toBe('/-/next/code/acme/website/branches/-');
     expect(screen.getByRole('link', {name: 'History'}).getAttribute('href')).toBe('/-/next/code/acme/website/commits/branch/main/-');
     expect(screen.getByRole('link', {name: 'Tip of main'})).toBeTruthy();

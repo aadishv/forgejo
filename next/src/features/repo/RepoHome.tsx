@@ -10,7 +10,7 @@
 // Nothing here asks the network beyond the tree and the README.
 
 import {Link} from '@tanstack/react-router';
-import {BookMarked, CircleDot, Copy, Folder, FolderGit2, GitBranch, GitPullRequest, Globe, History, Package, SquarePen, Star, GitFork} from 'lucide-react';
+import {CircleDot, Code2, Copy, Folder, FolderGit2, GitBranch, GitPullRequest, Globe, History, Package, SquarePen, Star, GitFork} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {Fragment, type ReactNode, useEffect, useMemo} from 'react';
 import {whenIdle} from '../../app/lazy.tsx';
@@ -44,7 +44,7 @@ export function RepoHome() {
   if (repoId === undefined) {
     return (
       <>
-        <RepoHeader owner={owner} repo={repo} repoId={undefined} icon={BookMarked} title="Overview"/>
+        <RepoHeader owner={owner} repo={repo} repoId={undefined} icon={Code2} title="Code" home/>
         <PageBody><Unavailable owner={owner} repo={repo}/></PageBody>
       </>
     );
@@ -56,7 +56,7 @@ const RepoHomePage = observer(function RepoHomePage({owner, repo, repoId}: {owne
   const app = useApp();
   return (
     <>
-      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={BookMarked} title="Overview">
+      <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={Code2} title="Code" home>
         <Button size="sm" variant="ghost" icon={SquarePen} shortcut={shortcutHint('create')} tooltip="New issue in this repository" onClick={() => {
           openCreate(app, repoId);
         }}>New issue</Button>

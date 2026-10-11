@@ -282,18 +282,18 @@ export default function Gallery() {
               <TabLink><a href="#code" aria-current="page">Files</a></TabLink>
               <TabLink><a href="#code">Commits</a></TabLink>
             </TabNav>
-            {/* A repository's tabs in a narrow bar: what does not fit is in More (TabNav's `more`). */}
+            {/* A repository's tabs in a narrow bar: what does not fit is in More (TabNav's `more`); the current one (Wiki) stays. */}
             <div className="max-w-sm">
-              <TabNav label="Example tabs that overflow" more={(from) => (
+              <TabNav label="Example tabs that overflow" more={(hidden) => (
                 <Menu>
                   <MenuTrigger asChild><Button size="sm" variant="ghost" icon={MoreHorizontal}>More</Button></MenuTrigger>
                   <MenuContent>
-                    {OVERFLOW_TABS.slice(from).map((t) => <MenuItem key={t}>{t}</MenuItem>)}
+                    {OVERFLOW_TABS.filter((_, i) => hidden.includes(i)).map((t) => <MenuItem key={t}>{t}</MenuItem>)}
                     <MenuItem>This page in the classic UI</MenuItem>
                   </MenuContent>
                 </Menu>
               )}>
-                {OVERFLOW_TABS.map((t, i) => <TabLink key={t}><a href="#code" aria-current={i === 0 ? 'page' : undefined}>{t}</a></TabLink>)}
+                {OVERFLOW_TABS.map((t, i) => <TabLink key={t}><a href="#code" aria-current={i === 5 ? 'page' : undefined}>{t}</a></TabLink>)}
               </TabNav>
             </div>
             <CodeFileHeader path="src/app.ts" oldPath="src/old.ts" status="renamed" stat={<DiffStat additions={12} deletions={3}/>}>

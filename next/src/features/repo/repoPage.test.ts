@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {describe, expect, test} from 'vitest';
-import {fitCount} from '../../ui/Code.tsx';
+import {shownTabs} from '../../ui/Code.tsx';
 import {tabOfPath} from './repoPage.tsx';
 
 describe('tabOfPath', () => {
@@ -40,20 +40,34 @@ describe('tabOfPath', () => {
   });
 });
 
-describe('fitCount (a tab bar\'s overflow into More)', () => {
-  test('all fit: Infinity', () => {
-    expect(fitCount([50, 60, 70], 400, 4, 60)).toBe(Infinity);
+describe('shownTabs (a tab bar\'s overflow into More)', () => {
+  test('all fit: undefined (every tab in the bar)', () => {
+    expect(shownTabs([50, 60, 70], 400, 4, 60)).toBeUndefined();
+    expect(shownTabs([50, 60, 70], 400, 4, 60, 2)).toBeUndefined();
   });
 
   test('the tabs that do not fit beside the menu go into it', () => {
     // 60 (More) + 54 + 64 = 178 ≤ 200; + 74 > 200.
-    expect(fitCount([50, 60, 70], 200, 4, 60)).toBe(2);
-    expect(fitCount([50, 60, 70], 100, 4, 60)).toBe(0);
+    expect(shownTabs([50, 60, 70], 200, 4, 60)).toEqual([0, 1]);
+    expect(shownTabs([50, 60, 70], 100, 4, 60)).toEqual([]);
+    // The current tab among those that fit: the same.
+    expect(shownTabs([50, 60, 70], 200, 4, 60, 1)).toEqual([0, 1]);
+  });
+
+  test('the current tab stays in the bar, in place of the last ones that would fit', () => {
+    // 60 + 74 (current, index 2) + 54 = 188 ≤ 200; + 64 > 200: the first tab and the current one.
+    expect(shownTabs([50, 60, 70], 200, 4, 60, 2)).toEqual([0, 2]);
+    // A wide current tab displaces every other one.
+    expect(shownTabs([50, 60, 120], 200, 4, 60, 2)).toEqual([2]);
+    // Even when it does not fit beside the menu (the bar then scrolls).
+    expect(shownTabs([50, 60, 200], 200, 4, 60, 2)).toEqual([2]);
+    // A later tab never jumps ahead of a hidden earlier one.
+    expect(shownTabs([50, 60, 30, 70], 200, 4, 60, 3)).toEqual([0, 3]);
   });
 
   test('a bar not laid out yet (no room, a width unknown or 0) shows every tab', () => {
-    expect(fitCount([50, 60], 0, 4, 60)).toBe(Infinity);
-    expect(fitCount([50, undefined], 100, 4, 60)).toBe(Infinity);
-    expect(fitCount([50, 0], 100, 4, 60)).toBe(Infinity);
+    expect(shownTabs([50, 60], 0, 4, 60)).toBeUndefined();
+    expect(shownTabs([50, undefined], 100, 4, 60)).toBeUndefined();
+    expect(shownTabs([50, 0], 100, 4, 60, 1)).toBeUndefined();
   });
 });

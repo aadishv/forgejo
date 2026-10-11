@@ -110,13 +110,15 @@ export interface RepoHeaderProps {
    * request has tabs of its own: one row of tabs per page).
    */
   detail?: 'issues' | 'pulls' | undefined;
+  /** The repository's home: the browser tab's title is the repository alone (`owner/repo`), as GitHub's. */
+  home?: boolean | undefined;
 }
 
 /**
  * Every repository page's header: breadcrumb, title and controls, then the repository's tabs — none for a
  * repository that is not known here (no such repository, no access): they would all lead to the same dead end.
  */
-export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle, detail}: RepoHeaderProps) {
+export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle, detail, home = false}: RepoHeaderProps) {
   const page = docTitle ?? (typeof title === 'string' ? title : undefined);
   const notFound = useRepoNotFound();
   if (repoId === undefined && notFound) {
@@ -126,7 +128,7 @@ export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle
   return (
     <>
       <PageHeader icon={icon} context={<RepoContext owner={owner} repo={repo} section={detail}/>} title={title}
-        docTitle={page && page !== 'Overview' ? `${page} · ${owner}/${repo}` : `${owner}/${repo}`}>{children}</PageHeader>
+        docTitle={page && !home ? `${page} · ${owner}/${repo}` : `${owner}/${repo}`}>{children}</PageHeader>
       {repoId !== undefined && !detail && <RepoTabs owner={owner} repo={repo} repoId={repoId}/>}
     </>
   );
@@ -229,7 +231,7 @@ export const RepoTabs = observer(function RepoTabs({owner, repo, repoId}: {owner
     ...admin ? [classic('settings', `${base}/settings`, Settings, 'Settings')] : [],
   ];
   return (
-    <TabNav label="Repository" more={(from) => <RepoMore overflow={tabs.slice(from)}/>}>
+    <TabNav label="Repository" more={(hidden) => <RepoMore overflow={tabs.filter((_, i) => hidden.includes(i))}/>}>
       {tabs.map((t) => <Fragment key={t.key}>{t.tab}</Fragment>)}
     </TabNav>
   );
