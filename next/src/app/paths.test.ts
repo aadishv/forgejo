@@ -23,6 +23,11 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/wiki/C%2B%2B')).toBe('/acme/atlas/wiki/C%2B%2B');
   expect(nextPathOf('/acme/atlas/wiki/-/pages')).toBe('/acme/atlas/wiki/-/pages');
   expect(nextPathOf('/acme/atlas/wiki/Home/-/edit')).toBe('/acme/atlas/wiki/Home/-/edit');
+  // A comparison (where a pull request is opened), with the default branch left out or no head yet.
+  expect(nextPathOf('/acme/atlas/compare/main...feature/x')).toBe('/-/next/code/acme/atlas/compare/main...feature/x/-');
+  expect(nextPathOf('/acme/atlas/compare/feature')).toBe('/-/next/code/acme/atlas/compare/feature/-');
+  expect(nextPathOf('/acme/atlas/compare')).toBe('/-/next/code/acme/atlas/compare/-');
+  expect(nextPathOf('/acme/atlas/compare/main..feature')).toBeUndefined();
   // Forgejo's own pages and what the app does not render stay classic.
   for (const p of ['/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
@@ -33,6 +38,8 @@ test('the app\'s pages → classic pages', () => {
   expect(classicPathOf('/acme/atlas/issues/3')).toBe('/acme/atlas/issues/3');
   expect(classicPathOf('/-/next/code/acme/atlas/src/branch/main/README.md/-')).toBe('/acme/atlas/src/branch/main/README.md');
   expect(classicPathOf('/-/next/code/acme/atlas/-')).toBe('/acme/atlas');
+  expect(classicPathOf('/-/next/code/acme/atlas/compare/-')).toBe('/acme/atlas/compare');
+  expect(classicPathOf('/-/next/code/acme/atlas/compare/main...feature/x/-')).toBe('/acme/atlas/compare/main...feature/x');
   expect(classicPathOf('/-/next/projects/1', {board: () => ({repo: 'acme/atlas'})})).toBe('/acme/atlas/projects/1');
   expect(classicPathOf('/-/next/projects/3', {board: () => ({owner: 'acme'})})).toBe('/acme/-/projects/3');
   expect(classicPathOf('/-/next/boards', {login: 'dev'})).toBe('/dev/-/projects');

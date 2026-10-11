@@ -130,13 +130,34 @@ func codeAddress(rest []string) bool {
 		}
 		return false
 	case "compare":
-		spec := strings.Join(rest[1:], "/")
-		at := strings.Index(spec, "...")
-		return at > 0 && at+3 < len(spec)
+		return compareAddress(strings.Join(rest[1:], "/"))
 	case "pulls":
 		return len(rest) == 3 && number(rest[1]) && (rest[2] == "files" || rest[2] == "commits")
 	}
 	return false
+}
+
+// compareAddress reports whether spec (what follows /compare/) is a
+// comparison the UI renders, read as routers/web/repo/compare.go does:
+// "" (both sides the default branch: the page asks for a head), "{head}"
+// (the base is the default branch) or "{base}...{head}". A direct
+// comparison ("a..b") and the .diff/.patch downloads stay classic. Keep in
+// step with parseCompare in next/src/code/refs.ts.
+func compareAddress(spec string) bool {
+	if spec == "" {
+		return true
+	}
+	base, head, three := strings.Cut(spec, "...")
+	if !three {
+		base, head = "", spec
+	}
+	if three && (base == "" || head == "") {
+		return false
+	}
+	if strings.Contains(base, "..") || strings.Contains(head, "..") {
+		return false
+	}
+	return !strings.HasSuffix(head, ".diff") && !strings.HasSuffix(head, ".patch")
 }
 
 // shaPattern is a full commit SHA (SHA-1 or SHA-256).

@@ -122,7 +122,15 @@ describe('refs', () => {
     expect(parseCodePath(`commit/${A}`)).toEqual({view: 'commit', sha: A});
     expect(parseCodePath('commit/abc123')).toBeUndefined();
     expect(parseCodePath('compare/main...feature/x')).toEqual({view: 'compare', base: 'main', head: 'feature/x'});
-    expect(parseCodePath('compare/main')).toBeUndefined();
+    // Forgejo's compare addresses: no spec (both sides the default branch), a head alone, a fork's branch.
+    expect(parseCodePath('compare')).toEqual({view: 'compare', base: '', head: ''});
+    expect(parseCodePath('compare/-')).toEqual({view: 'compare', base: '', head: ''});
+    expect(parseCodePath('compare/feature/x')).toEqual({view: 'compare', base: '', head: 'feature/x'});
+    expect(parseCodePath('compare/main...alice:feature')).toEqual({view: 'compare', base: 'main', head: 'alice:feature'});
+    // Two dots (a direct comparison), a download, an empty side: classic pages.
+    for (const p of ['compare/main..feature', 'compare/main...feature.diff', 'compare/feature.patch', 'compare/...feature', 'compare/main...', 'compare/a...b...c']) {
+      expect(parseCodePath(p), p).toBeUndefined();
+    }
     expect(parseCodePath('actions/runs/3/jobs/1')).toEqual({view: 'run', run: 3, job: 1});
     expect(parseCodePath('actions/runs/3')).toEqual({view: 'run', run: 3, job: -1});
     expect(parseCodePath('branches/x')).toBeUndefined();

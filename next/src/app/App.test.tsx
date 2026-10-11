@@ -5,7 +5,7 @@ import {createMemoryHistory} from '@tanstack/react-router';
 import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {runInAction} from 'mobx';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {afterEach, describe, expect, test} from 'vitest';
+import {afterEach, describe, expect, test, vi} from 'vitest';
 import type {NextConfig} from '../protocol/types.gen.ts';
 import {classConflicts} from '../test/conflicts.ts';
 import {fakeSession, issue, repo, user} from '../test/fakeSession.ts';
@@ -161,13 +161,51 @@ describe('signed in', () => {
     const crumbs = screen.getByRole('navigation', {name: 'Breadcrumb'});
     expect(within(crumbs).getByRole('link', {name: 'acme'}).getAttribute('href')).toBe('/acme');
     const tabs = screen.getByRole('navigation', {name: 'Repository'});
-    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Overview', 'Issues', 'Pull requests', 'Code', 'Commits', 'Branches', 'Tags', 'Releases', 'Actions']);
-    expect(within(tabs).getByRole('link', {name: 'Overview'}).getAttribute('aria-current')).toBe('page');
+    // GitHub's order; the home is the Code tab. Pages only the classic UI has are marked (data-classic).
+    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Code', 'Issues', 'Pull requests', 'Actions', 'Projects', 'Wiki', 'Activity']);
+    expect(within(tabs).getByRole('link', {name: 'Code'}).getAttribute('aria-current')).toBe('page');
+    // The home is titled like its tab; the browser tab names the repository alone.
+    expect(screen.getByRole('heading', {level: 1}).textContent).toBe('Code');
+    await waitFor(() => {
+      expect(document.title).toBe('acme/website · Forgejo');
+    });
+    expect(within(tabs).getByRole('link', {name: 'Wiki'}).getAttribute('href')).toBe('/acme/website/wiki');
+    // The wiki is the app's; Activity is the classic UI's.
+    expect(within(tabs).getByRole('link', {name: 'Wiki'}).hasAttribute('data-classic')).toBe(false);
+    expect(within(tabs).getByRole('link', {name: 'Activity'}).hasAttribute('data-classic')).toBe(true);
+    expect(within(tabs).getByRole('button', {name: 'More of this repository'})).toBeTruthy();
     await router.navigate({to: '/$owner/$repo/issues', params: {owner: 'acme', repo: 'website'}});
     await waitFor(() => {
       expect(within(screen.getByRole('navigation', {name: 'Repository'})).getByRole('link', {name: 'Issues'}).getAttribute('aria-current')).toBe('page');
     });
     expect(within(sidebar).getByRole('link', {name: 'website'}).getAttribute('aria-current')).toBe('page');
+  });
+
+  test('the overview\'s files are headed like GitHub\'s: the branch picker, the branches, the history', async () => {
+    const s = signedIn();
+    const branch = (id: number, name: string, sha: string) => ({
+      id, repo_id: 20, name, commit_id: sha, commit_message: `Tip of ${name}`, commit_time: '2026-10-01T00:00:00Z', pusher_id: 1,
+      is_deleted: false, deleted_by_id: 0, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+    });
+    s.data.put('Branch', 'repo:20', branch(1, 'main', 'a'.repeat(40)));
+    s.data.put('Branch', 'repo:20', branch(2, 'small', 'b'.repeat(40)));
+    // The page starts the highlighter when idle (for the README's code blocks): no workers here.
+    vi.stubGlobal('Worker', class {
+      addEventListener = () => undefined;
+      removeEventListener = () => undefined;
+      postMessage = () => undefined;
+      terminate = () => undefined;
+    });
+    await renderApp('/acme/website', s);
+    // At once, above the files panel, while its tree is still loading (no layout shift when it arrives).
+    const picker = screen.getByRole('button', {name: 'Ref: main'});
+    const files = screen.getByRole('region', {name: 'Files'});
+    expect(picker.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(files.contains(picker)).toBe(false);
+    expect(screen.getByRole('link', {name: '2 branches'}).getAttribute('href')).toBe('/-/next/code/acme/website/branches/-');
+    expect(screen.getByRole('link', {name: 'History'}).getAttribute('href')).toBe('/-/next/code/acme/website/commits/branch/main/-');
+    expect(screen.getByRole('link', {name: 'Tip of main'})).toBeTruthy();
+    expect(screen.queryByRole('link', {name: 'Browse code'})).toBeNull();
   });
 
   test('a repository\'s code address (spaRoutes {code}) opens the app\'s code view; a pull request\'s Files its tab', async () => {
