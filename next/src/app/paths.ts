@@ -51,6 +51,8 @@ export function nextPathOf(path: string): string | undefined {
     if (a === 'notifications' || a === 'issues' || a === 'pulls') return `/${a}`;
     return isOwnerName(a) ? `/${enc(a)}` : undefined;
   }
+  // The new repository and organization forms ("repo" and "org" are reserved: never an owner).
+  if (segs.length === 2 && (a === 'repo' || a === 'org') && b === 'create') return `/${a}/create`;
   // Boards: /{owner}/{repo}/projects/{id}, /{org}/-/projects/{id}, /{user}/-/projects/{id}.
   if (segs.length === 4 && c === 'projects' && /^[1-9]\d{0,15}$/.test(rest[0] ?? '') && isOwnerName(a)) return `/-/next/projects/${rest[0] ?? ''}`;
   if (!isOwnerName(a) || !NAME.test(b)) return undefined;
@@ -81,7 +83,8 @@ export function appPageOf(classic: string): string {
   const query = at < 0 || classic[at] === '#' ? '' : classic.slice(at + 1).split('#')[0] ?? '';
   const mapped = nextPathOf(path) ?? nearestAppPage(path);
   if (mapped === undefined) return '/';
-  return query && !mapped.includes('?') && isListPath(mapped) ? `${mapped}?${query}` : mapped;
+  // A list keeps its filters; the new repository form its owner and template (`?org=3&template_id=9`).
+  return query && !mapped.includes('?') && (isListPath(mapped) || mapped === '/repo/create') ? `${mapped}?${query}` : mapped;
 }
 
 /**

@@ -1790,6 +1790,37 @@ export interface NextConfig {
    * (Forgejo's OAuth2 provider is disabled).
    */
   oauth: NextOAuth | null;
+  /**
+   * Repository is what a new repository starts from ([repository]
+   * settings and the Git in use); absent from older servers.
+   */
+  repository?: NextRepository;
+}
+/**
+ * NextRepository is the instance's defaults for a new repository (the
+ * UI's "New repository" form, as the classic /repo/create page has them).
+ */
+export interface NextRepository {
+  /**
+   * DefaultBranch is the branch an initialized repository starts with
+   * ([repository] DEFAULT_BRANCH).
+   */
+  default_branch: string;
+  /**
+   * DefaultPrivate is "last" (the visibility of the user's last new
+   * repository), "private" or "public" ([repository] DEFAULT_PRIVATE).
+   */
+  default_private: string;
+  /**
+   * ForcePrivate: every new repository is private ([repository]
+   * FORCE_PRIVATE).
+   */
+  force_private: boolean;
+  /**
+   * ObjectFormats are the object formats a new repository may use, the
+   * default first: "sha1", and "sha256" when the Git in use supports it.
+   */
+  object_formats: string[];
 }
 /**
  * NextOAuth describes the Next UI's OAuth2 client (a public client: PKCE

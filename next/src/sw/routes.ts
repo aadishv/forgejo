@@ -54,8 +54,8 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
 
 /**
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
- * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
- * `/{owner}/{repo}/pulls[/{n}]`. `?ui=classic` asks for the classic page, and so does an owner's profile tab
+ * `/`, `/notifications`, `/issues`, `/pulls`, `/repo/create`, `/org/create`, `/{owner}`, `/{owner}/{repo}`,
+ * `/{owner}/{repo}/issues[/{n}]`, `/{owner}/{repo}/pulls[/{n}]`. `?ui=classic` asks for the classic page, and so does an owner's profile tab
  * (`/{owner}?tab=activity`; the app shows the repositories). Keep in step with routers/livesync/spa.go.
  */
 export function isSpaRoute(path: string, search = ''): boolean {
@@ -69,6 +69,8 @@ export function isSpaRoute(path: string, search = ''): boolean {
     return isOwnerName(a) && !profileTab(q);
   }
   const [owner = '', repo = '', kind, n] = segs;
+  // The new repository and organization forms ("repo" and "org" are reserved: never an owner).
+  if (segs.length === 2 && (owner === 'repo' || owner === 'org') && repo === 'create') return true;
   if (!isOwnerName(owner) || !NAME.test(repo)) return false;
   if (kind === undefined) return true;
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.

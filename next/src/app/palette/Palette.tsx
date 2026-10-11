@@ -8,7 +8,7 @@
 import {useNavigate} from '@tanstack/react-router';
 import {
   AppWindow, BookMarked, BookPlus, Building2, CircleCheck, CloudUpload, Code2, CircleDot, Compass, FileCode, GitPullRequest, GitPullRequestClosed, CornerDownRight, Globe, Home,
-  Inbox, KanbanSquare, Layers, Keyboard, LogOut, Milestone, Monitor, Moon, PanelLeft, Settings, SquarePen, Sun, SunMoon, User,
+  Import, Inbox, KanbanSquare, Layers, Keyboard, LogOut, Milestone, Monitor, Moon, PanelLeft, Settings, SquarePen, Sun, SunMoon, User,
 } from 'lucide-react';
 import {runInAction, untracked} from 'mobx';
 import {type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState} from 'react';
@@ -90,8 +90,9 @@ const COMMANDS: PaletteCommand[] = [
     if (login) void nav({to: '/$owner', params: {owner: login}});
   }},
   {id: 'settings', label: 'Settings', icon: Settings, keywords: 'preferences account ssh keys password classic', classic: '/user/settings', run: () => undefined},
-  {id: 'new-repo', label: 'New repository', icon: BookPlus, keywords: 'create repo classic', classic: '/repo/create', run: () => undefined},
-  {id: 'new-org', label: 'New organization', icon: Building2, keywords: 'create org team classic', classic: '/org/create', run: () => undefined},
+  {id: 'new-repo', label: 'New repository', icon: BookPlus, aliases: ['create a repository', 'new repo'], keywords: 'create repo', run: (_, nav) => void nav({to: '/repo/create'})},
+  {id: 'new-migration', label: 'New migration', icon: Import, keywords: 'migrate import mirror repository classic', classic: '/repo/migrate', run: () => undefined},
+  {id: 'new-org', label: 'New organization', icon: Building2, aliases: ['create an organization', 'new org'], keywords: 'create org team', run: (_, nav) => void nav({to: '/org/create'})},
   {id: 'explore', label: 'Explore repositories, people and organizations', icon: Compass, keywords: 'explore discover browse find public classic', classic: '/explore/repos', run: () => undefined},
   {id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: 'help.shortcuts', keywords: 'help keys', run: (app) => {
     runInAction(() => {
