@@ -18,6 +18,11 @@ export interface OnlineRequest {
   api: 'v1' | 'sync';
   path: string;
   body?: unknown;
+  /**
+   * A multipart body instead (a file upload: a release's asset). Sent without an Idempotency-Key: B7 buffers a
+   * keyed body (16 MiB at most), and a file can be larger.
+   */
+  form?: FormData | undefined;
   signal?: AbortSignal | undefined;
   timeout?: number;
 }
@@ -56,7 +61,7 @@ async function send<T>(app: App, req: OnlineRequest): Promise<Written<T>> {
   if (!s) throw new RequestFailed(0, 'Not signed in.');
   const method = req.method ?? 'GET';
   const token = await s.auth.token();
-  const body = req.body === undefined ? undefined : JSON.stringify(req.body);
+  const body = req.form ?? (req.body === undefined ? undefined : JSON.stringify(req.body));
   let res: Response;
   try {
     res = await fetch(sitePath(app.config, `${req.api === 'v1' ? '/api/v1' : APIPrefix}${req.path}`), {
@@ -64,8 +69,9 @@ async function send<T>(app: App, req: OnlineRequest): Promise<Written<T>> {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json',
-        ...(method === 'GET' ? {} : {[HeaderIdempotencyKey]: uuid()}),
-        ...(body === undefined ? {} : {'Content-Type': 'application/json'}),
+        ...(method === 'GET' || req.form ? {} : {[HeaderIdempotencyKey]: uuid()}),
+        // A form's type (multipart, with its boundary) is the browser's.
+        ...(body === undefined || req.form ? {} : {'Content-Type': 'application/json'}),
       },
       ...(body === undefined ? {} : {body}),
       credentials: 'omit',
