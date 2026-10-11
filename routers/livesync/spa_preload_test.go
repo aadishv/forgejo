@@ -27,6 +27,8 @@ func TestRouteModules(t *testing.T) {
 		"/acme/atlas/wiki/Home/-/edit":       "src/features/wiki/WikiPage.tsx",
 		"/acme/atlas/activity":               "src/features/activity/Activity.tsx",
 		"/acme/atlas/activity/contributors":  "src/features/activity/Activity.tsx",
+		"/user/settings":                     "src/features/usersettings/UserSettings.tsx",
+		"/user/settings/keys":                "src/features/usersettings/UserSettings.tsx",
 	} {
 		got := routeModules(p)
 		if assert.NotEmpty(t, got, p) {
@@ -35,6 +37,8 @@ func TestRouteModules(t *testing.T) {
 	}
 	assert.Nil(t, routeModules("/-/next/"))
 	assert.Nil(t, routeModules("/acme/atlas/settings/x"))
+	assert.Nil(t, routeModules("/user/settings/applications"), "a classic settings page")
+	assert.Nil(t, routeModules("/user/login"))
 }
 
 func TestPreloadHeaders(t *testing.T) {

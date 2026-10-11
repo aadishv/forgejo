@@ -2219,6 +2219,40 @@ export interface Grants {
 }
 
 //////////
+// source: user.go
+
+/**
+ * APIUserOptions are the choices of the appearance settings: the
+ * instance's themes ([ui] THEMES, in that order) and languages ([i18n]
+ * LANGS, by name), as the classic appearance page offers them. API v1's
+ * PATCH /user/settings stores any theme and language it is sent, so a
+ * client offers only these. Names are in the viewer's language.
+ * DefaultTheme is [ui] DEFAULT_THEME (an account without a theme of its
+ * own shows it).
+ */
+export interface APIUserOptions {
+  themes: APIOption[];
+  default_theme: string;
+  languages: APIOption[];
+}
+/**
+ * APIOption is a choice: the value stored (ID) and its display name.
+ */
+export interface APIOption {
+  id: string;
+  name: string;
+}
+/**
+ * APIPrimaryEmail is the body of PUT /user/emails/primary: one of the
+ * viewer's verified addresses (case-insensitive) becomes the account's
+ * primary address, as the classic account page's "Set as primary" does
+ * (Forgejo mails the former primary address about the change).
+ */
+export interface APIPrimaryEmail {
+  email: string;
+}
+
+//////////
 // source: writes.go
 
 /**

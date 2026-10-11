@@ -174,6 +174,18 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/activity/contributors/data": false, // the classic graphs' JSON
 		"/user2/repo1/activity/weekly/x":          false,
 		"/user2/repo1/activity_author_data":       false,
+		// The viewer's settings: four pages; the rest stay classic.
+		"/user/settings":              true,
+		"/user/settings/":             true,
+		"/user/settings/account":      true,
+		"/user/settings/appearance":   true,
+		"/user/settings/keys":         true,
+		"/user/settings/applications": false,
+		"/user/settings/security":     false,
+		"/user/settings/keys/x":       false,
+		"/user/login":                 false,
+		"/user":                       false,
+		"/user2/settings":             true, // a repository named "settings" of user2
 	} {
 		assert.Equal(t, want, spaRoute(p), p)
 	}
@@ -290,8 +302,17 @@ func TestSPAServing(t *testing.T) {
 			for _, p := range []string{"/user2/repo1/wiki", "/user2/repo1/wiki/?action=_pages", "/user2/repo1/wiki/Home?action=_edit", "/user2/repo1/wiki/-/pages"} {
 				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
 			}
+			for _, p := range []string{"/user/settings", "/user/settings/keys", "/user/settings/account"} {
+				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
+			}
+			// A classic page's form posted to its own address comes back to the classic page (its message).
+			back := append([]string{"Referer", "https://example.com" + sub + "/user/settings/account?ui=classic"}, opted...)
+			assert.Equal(t, 299, get(t, h, sub+"/user/settings/account", back...).Code, "back to the classic page")
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user/settings/keys", back...).Code, "another page")
+			other := append([]string{"Referer", "https://example.com" + sub + "/user/settings/account"}, opted...)
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user/settings/account", other...).Code, "from the app's page")
 			// A wiki page's revisions are the classic page's.
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision"} {
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision", "/user/settings/applications", "/user/settings?ui=classic"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)
