@@ -514,3 +514,21 @@ func TestInsertConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, bytes.Contains(out, []byte("</script>")), "the config JSON is HTML-safe: %s", out)
 }
+
+func TestSSHClonePrefix(t *testing.T) {
+	defer test.MockVariableValue(&setting.SSH, setting.SSH)()
+	defer test.MockVariableValue(&setting.Repository.UseCompatSSHURI, false)()
+	setting.SSH.Disabled = false
+	setting.SSH.User = "git"
+	setting.SSH.Domain = "code.example"
+	setting.SSH.Port = 22
+	assert.Equal(t, "git@code.example:", sshClonePrefix())
+	setting.SSH.Port = 2222
+	assert.Equal(t, "ssh://git@code.example:2222/", sshClonePrefix())
+	setting.SSH.Port = 22
+	setting.Repository.UseCompatSSHURI = true
+	assert.Equal(t, "ssh://git@code.example/", sshClonePrefix())
+	setting.SSH.Disabled = true
+	assert.Empty(t, sshClonePrefix())
+	assert.Empty(t, nextConfig().SSHClonePrefix)
+}

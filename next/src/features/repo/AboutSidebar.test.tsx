@@ -81,7 +81,7 @@ async function renderHome({s, opts}: ReturnType<typeof session>) {
 }
 
 describe('the repository home\'s side pane', () => {
-  test('About: description, website, topics, fork parent, Readme / License / Activity, counts, clone and archive', async () => {
+  test('About: description, website, topics, fork parent, Readme / License / Activity, counts (the clone URL and archives are in the Code menu)', async () => {
     const {pane} = await renderHome(session({}, {languages: {Go: 750, TypeScript: 250}}));
     const about = within(pane).getByRole('region', {name: 'About'});
     expect(within(about).getByText('The public website.')).toBeTruthy();
@@ -105,11 +105,8 @@ describe('the repository home\'s side pane', () => {
       expect(a.getAttribute('href')).toBe(`/acme/website/${path}`);
       expect(a.hasAttribute('data-classic')).toBe(true);
     }
-    expect(within(about).getByRole('group', {name: 'Clone over HTTPS'}).querySelector('code')?.textContent).toBe('http://localhost/acme/website.git');
-    expect(within(about).getByRole('button', {name: 'Copy the clone URL'})).toBeTruthy();
-    const zip = within(about).getByRole('link', {name: 'Download ZIP'});
-    expect(zip.getAttribute('href')).toBe('/acme/website/archive/main.zip');
-    expect(zip.hasAttribute('download')).toBe(true);
+    expect(within(about).queryByRole('button', {name: 'Copy the clone URL'})).toBeNull();
+    expect(within(about).queryByRole('link', {name: 'Download ZIP'})).toBeNull();
     // The old property rows are gone (the tabs are the way to issues and pull requests).
     expect(within(pane).queryByText(/\d+ open/)).toBeNull();
     // The README panel is the Readme link's target.

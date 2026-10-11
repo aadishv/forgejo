@@ -643,6 +643,7 @@ func nextConfig() *protocol.NextConfig {
 	cfg := &protocol.NextConfig{
 		AppURL: setting.AppURL, AppSubURL: setting.AppSubURL, Base: setting.AppSubURL + nextBase,
 		AppName: setting.AppName, Version: setting.AppVer, Protocol: protocol.ProtocolVersion,
+		SSHClonePrefix: sshClonePrefix(),
 	}
 	if app := livesync_service.OAuthApp(); app != nil {
 		cfg.OAuth = &protocol.NextOAuth{
@@ -652,6 +653,17 @@ func nextConfig() *protocol.NextConfig {
 		}
 	}
 	return cfg
+}
+
+// sshClonePrefix is the part of every SSH clone URL before "{owner}/{repo}.git"
+// (Forgejo's own composition: the user, the host, a non-standard port), or ""
+// when SSH is disabled.
+func sshClonePrefix() string {
+	if setting.SSH.Disabled {
+		return ""
+	}
+	const owner, repo = "o", "r"
+	return strings.TrimSuffix(repo_model.ComposeSSHCloneURL(owner, repo), owner+"/"+repo+".git")
 }
 
 var (
