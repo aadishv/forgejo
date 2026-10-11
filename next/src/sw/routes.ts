@@ -57,6 +57,7 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
  * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
  * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/activity[/{period or graph}]`, the wiki (`/{owner}/{repo}/wiki[/…]`),
+ * `/{owner}/{repo}/labels`, `/{owner}/{repo}/milestones[/new]`, `/{owner}/{repo}/milestone/{n}[/edit]`,
  * code addresses, the viewer's settings (`/user/settings[/account|appearance|keys]`). `?ui=classic` asks for the classic page, and so does an owner's profile tab
  * (`/{owner}?tab=activity`; the app shows the repositories) or a wiki page's revisions (`?action=_revision`).
  * Keep in step with routers/livesync/spa.go.
@@ -80,6 +81,10 @@ export function isSpaRoute(path: string, search = ''): boolean {
   if (kind === 'wiki') return parseWikiRest(segs.slice(3).map(decodeSegment)) !== undefined && q.get('action') !== '_revision';
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.
   if (codeAddress(segs.slice(2))) return true;
+  // Labels, milestones, a milestone and its form (features/meta).
+  if (kind === 'labels') return segs.length === 3;
+  if (kind === 'milestones') return segs.length === 3 || (segs.length === 4 && n === 'new');
+  if (kind === 'milestone') return /^[1-9]\d{0,17}$/.test(n ?? '') && (segs.length === 4 || (segs.length === 5 && segs[4] === 'edit'));
   if (segs.length > 4) return false;
   if (kind === 'activity') return n === undefined || ACTIVITY_PAGES.has(n);
   if (kind !== 'issues' && kind !== 'pulls') return false;

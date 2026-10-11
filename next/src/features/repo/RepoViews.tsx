@@ -22,6 +22,7 @@ import {CodeLink} from '../code/nav.tsx';
 import {loadPeople} from '../issues/people.ts';
 import {ListControls} from '../issues/ListBar.tsx';
 import {ListBody, useListModel} from '../issues/ListPage.tsx';
+import {IssueNav} from '../meta/IssueNav.tsx';
 import {RepoHeader, Unavailable, useRepoPage} from './repoPage.tsx';
 
 const issuesApi = getRouteApi('/shell/$owner/$repo/issues');
@@ -36,6 +37,8 @@ const RepoListPage = observer(function RepoListPage({owner, repo, repoId, pulls,
     <>
       <RepoHeader owner={owner} repo={repo} repoId={repoId} icon={pulls ? GitPullRequest : CircleDot} title={pulls ? 'Pull requests' : 'Issues'}>
         <ListControls model={model} repoId={repoId} hideGroups={['repo']}/>
+        {/* GitHub's Labels and Milestones beside the list's controls. */}
+        <IssueNav owner={owner} repo={repo} repoId={repoId}/>
         {/* Creating from the list (C as well). A pull request starts from a comparison: its branches are chosen there. */}
         {pulls ?
           <NewPullButton owner={owner} repo={repo} repoId={repoId}/> :

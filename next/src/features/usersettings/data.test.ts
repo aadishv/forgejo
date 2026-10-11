@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {beforeEach, expect, test, vi} from 'vitest';
+import type * as Api from '../../app/api.ts';
 import {type OnlineRequest, RequestFailed} from '../../app/api.ts';
 import type {App} from '../../app/store.ts';
 import type {CodeCache} from '../../code/cache.ts';
@@ -12,7 +13,7 @@ const calls: OnlineRequest[] = [];
 let answer: (req: OnlineRequest) => unknown = () => undefined;
 
 vi.mock('../../app/api.ts', async (orig) => {
-  const real = await orig<typeof import('../../app/api.ts')>();
+  const real = await orig<typeof Api>();
   return {
     ...real,
     online: (_app: unknown, req: OnlineRequest) => {
@@ -20,7 +21,7 @@ vi.mock('../../app/api.ts', async (orig) => {
       try {
         return Promise.resolve(answer(req));
       } catch (err) {
-        return Promise.reject(err as Error);
+        return Promise.reject(err instanceof Error ? err : new Error(String(err)));
       }
     },
   };

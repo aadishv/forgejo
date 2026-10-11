@@ -25,6 +25,11 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/user/settings', '/user/settings/', '/user/settings/account', '/user/settings/appearance', '/user/settings/keys']) expect(isSpaRoute(p), p).toBe(true);
   for (const p of ['/user', '/user/settings/applications', '/user/settings/security', '/user/settings/keys/1', '/user/settingsx', '/user/login']) expect(isSpaRoute(p), p).toBe(false);
   expect(isSpaRoute('/user/settings', '?ui=classic')).toBe(false);
+  // Labels and milestones (features/meta).
+  for (const p of ['/acme/repo/labels', '/acme/repo/milestones', '/acme/repo/milestones/new', '/acme/repo/milestone/3', '/acme/repo/milestone/3/edit']) expect(isSpaRoute(p), p).toBe(true);
+  for (const p of ['/acme/repo/labels/1', '/acme/repo/milestones/3', '/acme/repo/milestone', '/acme/repo/milestone/0', '/acme/repo/milestone/x/edit', '/acme/repo/milestone/3/close']) {
+    expect(isSpaRoute(p), p).toBe(false);
+  }
   // The classic page asked for by name, and an owner's profile tabs, are classic.
   expect(isSpaRoute('/acme/repo/issues', '?ui=classic')).toBe(false);
   expect(isSpaRoute('/acme', '?tab=activity')).toBe(false);

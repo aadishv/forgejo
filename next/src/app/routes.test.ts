@@ -51,7 +51,9 @@ test('every canonical route of the app is a server spaRoute', () => {
 
 test('sample URLs match a page (not the root\'s not-found)', () => {
   const r = router();
-  for (const path of ['/', '/notifications', '/issues', '/pulls', '/acme/web.site', '/-/next/acme', '/-/next/acme/web.site', '/-/next/acme/web.site/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/-/next/', '/-/next/callback', '/acme/web.site/wiki', '/acme/web.site/wiki/', '/acme/web.site/wiki/Home', '/acme/web.site/wiki/-/pages', '/acme/web.site/wiki/-/new', '/acme/web.site/wiki/Home/-/edit', '/user/settings', '/user/settings/keys', '/user/settings/account', '/user/settings/appearance']) {
+  for (const path of ['/', '/notifications', '/issues', '/pulls', '/acme/web.site', '/-/next/acme', '/-/next/acme/web.site', '/-/next/acme/web.site/', '/acme/web.site/issues', '/acme/web.site/issues/12', '/acme/api/pulls/3', '/-/next/', '/-/next/callback', '/acme/web.site/wiki', '/acme/web.site/wiki/', '/acme/web.site/wiki/Home', '/acme/web.site/wiki/-/pages', '/acme/web.site/wiki/-/new', '/acme/web.site/wiki/Home/-/edit',
+    '/acme/api/labels', '/acme/api/milestones', '/acme/api/milestones/new', '/acme/api/milestone/4', '/acme/api/milestone/4/edit',
+    '/user/settings', '/user/settings/keys', '/user/settings/account', '/user/settings/appearance']) {
     const matches = r.matchRoutes(path, {});
     const leaf = matches.at(-1);
     expect(leaf?.routeId, path).not.toBe('__root__');
