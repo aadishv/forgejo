@@ -1,7 +1,9 @@
 // Copyright 2026 The Forgejo Authors. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import {Copy} from 'lucide-react';
 import type {InputHTMLAttributes, ReactNode, Ref, TextareaHTMLAttributes} from 'react';
+import {IconButton} from './Button.tsx';
 import {cx} from './cx.ts';
 import {Icon, type LucideIcon} from './Icon.tsx';
 import {control, controlHeight, type ControlSize, field} from './recipes.ts';
@@ -37,6 +39,23 @@ export function Input({size = 'md', invalid, icon, mono, className, ...rest}: In
     <span className={cx('relative inline-flex items-center', className)}>
       <span className="pointer-events-none absolute left-2 flex text-fg-subtle"><Icon icon={icon} size="sm"/></span>
       {input}
+    </span>
+  );
+}
+
+/**
+ * A value to copy (a clone URL): read-only and whole (a click or the focus selects all of it, monospace), with a
+ * copy button after it. Full width. The caller copies (`onCopy`) and says so.
+ */
+export function CopyField({value, label, copyLabel, onCopy}: {value: string; label: string; copyLabel: string; onCopy: () => void}) {
+  return (
+    <span className="flex w-full min-w-0 items-center gap-1">
+      <input readOnly value={value} aria-label={label} spellCheck={false}
+        onFocus={(e) => {
+          e.currentTarget.select();
+        }}
+        className={cx(control, controlHeight.sm, field, 'min-w-0 flex-1 px-2 font-mono text-code')}/>
+      <IconButton size="sm" icon={Copy} label={copyLabel} onClick={onCopy}/>
     </span>
   );
 }

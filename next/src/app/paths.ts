@@ -15,6 +15,7 @@
 // Paths here are site paths (without the instance's sub-path).
 
 import {END, parseCodePath} from '../code/refs.ts';
+import {classicWikiPath, parseWikiRest, wikiActionView, wikiPath} from '../features/wiki/paths.ts';
 import {isOwnerName, isSpaRoute, NAME, SETTINGS_SECTIONS} from '../sw/routes.ts';
 
 export {isOwnerName};
@@ -70,9 +71,30 @@ export function nextPathOf(path: string): string | undefined {
     if (c === 'pulls' && rest.length === 2 && (sub === 'files' || sub === 'commits' || sub === 'checks')) return `${repoPath}/pulls/${n}?tab=${sub}`;
     return undefined;
   }
+  // The wiki: its Home, a page, the page list, a new page, a page's editor (features/wiki/paths.ts).
+  if (c === 'wiki') {
+    const v = parseWikiRest(rest);
+    if (v === undefined) return undefined;
+    return rest.length === 0 ? `${repoPath}/wiki` : wikiPath(a, b, v);
+  }
   if (c === 'activity') return isSpaRoute(path) ? `${repoPath}/activity${rest[0] === undefined ? '' : `/${rest[0]}`}` : undefined;
   const code = [c, ...rest].join('/');
   return parseCodePath(code) ? codePath(a, b, code) : undefined;
+}
+
+/**
+ * The app's page for a classic wiki address with its query: the classic wiki's `?action=_pages`, `_new` and
+ * `_edit` are views of their own here (`/wiki/-/pages`, …). undefined for anything else.
+ */
+export function wikiAddress(path: string, search: string): string | undefined {
+  if (/%(?:2e|2f|5c)/i.test(path)) return undefined;
+  const [a = '', b = '', c, ...rest] = segments(path);
+  if (c !== 'wiki' || !isOwnerName(a) || !NAME.test(b)) return undefined;
+  const v = parseWikiRest(rest);
+  if (v === undefined) return undefined;
+  const action = new URLSearchParams(search.replace(/^\?/, '')).get('action') ?? undefined;
+  const to = wikiActionView(v, action);
+  return to === v && rest.length === 0 ? `/${enc(a)}/${enc(b)}/wiki` : wikiPath(a, b, to);
 }
 
 /**
@@ -85,7 +107,7 @@ export function appPageOf(classic: string): string {
   const at = classic.search(/[?#]/);
   const path = at < 0 ? classic : classic.slice(0, at);
   const query = at < 0 || classic[at] === '#' ? '' : classic.slice(at + 1).split('#')[0] ?? '';
-  const mapped = nextPathOf(path) ?? nearestAppPage(path);
+  const mapped = wikiAddress(path, query) ?? nextPathOf(path) ?? nearestAppPage(path);
   if (mapped === undefined) return '/';
   return query && !mapped.includes('?') && isListPath(mapped) ? `${mapped}?${query}` : mapped;
 }
@@ -104,6 +126,7 @@ function nearestAppPage(path: string): string | undefined {
   if (c === 'projects') return '/-/next/boards';
   if (c === 'issues' || c === 'pulls') return `/${enc(a)}/${enc(b)}/${c}`;
   if (c === 'settings') return `/${enc(a)}/${enc(b)}/settings`;
+  if (c === 'wiki') return `/${enc(a)}/${enc(b)}/wiki`;
   return `/${enc(a)}/${enc(b)}`;
 }
 
@@ -142,6 +165,11 @@ export interface ClassicContext {
  */
 export function classicPathOf(path: string, ctx: ClassicContext = {}): string {
   const segs = segments(path);
+  // The wiki's own views put in a query by the classic wiki (`/wiki/-/pages` → `/wiki/?action=_pages`).
+  if (segs[2] === 'wiki' && segs.length > 3 && isOwnerName(segs[0] ?? '')) {
+    const v = parseWikiRest(segs.slice(3));
+    if (v && v.view !== 'page') return classicWikiPath(segs[0] ?? '', segs[1] ?? '', v);
+  }
   if (segs[0] !== '-' || segs[1] !== 'next') return path || '/';
   const [, , a, ...rest] = segs;
   if (a === undefined || a === 'callback') return '/';
@@ -214,6 +242,6 @@ export function repoOfPath(path: string): string | undefined {
   }
   const [a = '', b = '', c] = segs;
   if (segs.length < 2 || !isOwnerName(a) || !NAME.test(b)) return undefined;
-  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'settings') return undefined;
+  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki' && c !== 'settings') return undefined;
   return `${a}/${b}`.toLowerCase();
 }

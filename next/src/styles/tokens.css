@@ -41,7 +41,7 @@
   --color-fg: #1b1b1f;
   --color-fg-muted: #4f4f59;
   --color-fg-subtle: #64646f;
-  --color-fg-on-accent: #fff; /* on accent and danger-solid fills */
+  --color-fg-on-accent: #fff; /* on accent, success-solid and danger-solid fills */
 
   /* The one accent: a fill (+ hover), a text colour and a subtle tint. */
   --color-accent: #5e6ad2;
@@ -53,6 +53,9 @@
   /* Status: text/icon colour + subtle tint; danger also has a solid fill. */
   --color-success: #1a7540;
   --color-success-subtle: #e6f4ec;
+  /* A green fill (+ hover) for the one green button (the overview's Code menu, as on GitHub). */
+  --color-success-solid: #1a7f37;
+  --color-success-solid-hover: #176f30;
   --color-warning: #8a5c00;
   --color-warning-subtle: #fbf1dc;
   --color-danger: #bd2b39;
@@ -265,6 +268,8 @@
   --color-focus: #838de7;
   --color-success: #4cc27a;
   --color-success-subtle: #17301f;
+  --color-success-solid: #238636;
+  --color-success-solid-hover: #1f7a31;
   --color-warning: #e0a83a;
   --color-warning-subtle: #33280f;
   --color-danger: #f07079;

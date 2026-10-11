@@ -3,9 +3,9 @@
 
 // What every repository page shares: the repository the URL names (the
 // route loader's id) with its group held while the page is open, the one
-// repository header (owner / repository breadcrumb, the page's title and
-// controls, the repository's tabs), and the page for a repository that is
-// not available here.
+// repository header (owner / repository breadcrumb, the repository's tabs,
+// the page's title and controls), and the page for a repository that is not
+// available here.
 
 import {Link, useLoaderData, useNavigate, useParams, useRouter, useRouterState} from '@tanstack/react-router';
 import {AppWindow, BookOpen, ChartLine, ChevronDown, ChevronRight, CircleDot, CirclePlay, Code2, GitPullRequest, KanbanSquare, Settings, Slash} from 'lucide-react';
@@ -18,7 +18,7 @@ import {ClassicMenuItem} from '../../app/ClassicMenuItem.tsx';
 import {Missing} from '../../app/Missing.tsx';
 import {classicOfHere} from '../../app/session.ts';
 import {type RepoMatch, repoGone, useHold} from '../../app/repo.ts';
-import {PageHeader} from '../../app/shell/PageHeader.tsx';
+import {PageHeader, StackedPageHeader} from '../../app/shell/PageHeader.tsx';
 import {useApp, useSession} from '../../app/store.ts';
 import {withEnd} from '../../code/refs.ts';
 import {
@@ -74,14 +74,18 @@ export function useCanWrite(repoId: number): boolean {
   return canWrite(useSession(), repoId);
 }
 
-/** The breadcrumb: owner (their page) / repository (its home) [› its issues or pull requests, on a detail page]. */
-export function RepoContext({owner, repo, section}: {owner: string; repo: string; section?: 'issues' | 'pulls' | undefined}) {
+/**
+ * The breadcrumb: owner (their page) / repository (its home) [› its issues or pull requests, on a detail page].
+ * `heading`: the repository's name is the page's heading (its home, which has no title row).
+ */
+export function RepoContext({owner, repo, section, heading = false}: {owner: string; repo: string; section?: 'issues' | 'pulls' | undefined; heading?: boolean}) {
+  const repoCrumb = <TextLink><Link to="/$owner/$repo" params={{owner, repo}} activeOptions={{exact: true}}>{repo}</Link></TextLink>;
   return (
     <>
       {/* Exact: an ancestor's crumb is no "current page" (TanStack's fuzzy match marked the owner on every page). */}
       <TextLink><Link to="/$owner" params={{owner}} activeOptions={{exact: true}}>{owner}</Link></TextLink>
       <Icon icon={Slash} size="sm" className="text-fg-subtle"/>
-      <TextLink><Link to="/$owner/$repo" params={{owner, repo}} activeOptions={{exact: true}}>{repo}</Link></TextLink>
+      {heading ? <h1 className="flex min-w-0 font-medium">{repoCrumb}</h1> : repoCrumb}
       {section && <>
         <Icon icon={ChevronRight} size="sm" className="text-fg-subtle"/>
         <TextLink>
@@ -99,9 +103,10 @@ export interface RepoHeaderProps {
   repo: string;
   /** undefined: the repository is not known here (the tabs still lead to its pages). */
   repoId: number | undefined;
+  /** The title row's title (on the home, which has no title row, only the tab's title when it is text). */
   title: ReactNode;
   icon?: LucideIcon | undefined;
-  /** The page's controls (filters, ref picker). */
+  /** The page's controls (filters, ref picker): in the title row; on the home at the end of the breadcrumb's row. */
   children?: ReactNode;
   /** The tab's title before the repository's name (default: the title when it is text). */
   docTitle?: string | undefined;
@@ -115,8 +120,14 @@ export interface RepoHeaderProps {
 }
 
 /**
- * Every repository page's header: breadcrumb, title and controls, then the repository's tabs — none for a
- * repository that is not known here (no such repository, no access): they would all lead to the same dead end.
+ * Every repository page's header, as GitHub's: the breadcrumb (owner / repository) and the sync indicator, the
+ * repository's tabs, then the page's title and controls ("Issues", its filters and New issue; a file's path, its
+ * ref picker and History). The home has no title row: the repository's name is its heading, and its actions end
+ * the breadcrumb's row (GitHub's repository title row).
+ *
+ * A page without the repository's tabs keeps one row (breadcrumb › title, controls): an issue's or a pull
+ * request's page (a pull request has tabs of its own: one row of tabs per page), and a repository that is not
+ * known here (no such repository, no access: the tabs would all lead to the same dead end).
  */
 export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle, detail, home = false}: RepoHeaderProps) {
   const page = docTitle ?? (typeof title === 'string' ? title : undefined);
@@ -125,16 +136,18 @@ export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle
     // No such repository: no breadcrumb into it and no page title of a section it does not have.
     return <PageHeader icon={icon} title={`${owner}/${repo}`} docTitle={`Not found · ${owner}/${repo}`}/>;
   }
-  return (
-    <>
-      <PageHeader icon={icon} context={<RepoContext owner={owner} repo={repo} section={detail}/>} title={title}
-        docTitle={page && !home ? `${page} · ${owner}/${repo}` : `${owner}/${repo}`}>{children}</PageHeader>
-      {repoId !== undefined && !detail && <RepoTabs owner={owner} repo={repo} repoId={repoId}/>}
-    </>
-  );
+  const tabTitle = page && !home ? `${page} · ${owner}/${repo}` : `${owner}/${repo}`;
+  if (repoId === undefined || detail) {
+    return <PageHeader icon={icon} context={<RepoContext owner={owner} repo={repo} section={detail}/>} title={title} docTitle={tabTitle}>{children}</PageHeader>;
+  }
+  return home ?
+    <StackedPageHeader context={<RepoContext owner={owner} repo={repo} heading/>} actions={children}
+      tabs={<RepoTabs owner={owner} repo={repo} repoId={repoId}/>} docTitle={tabTitle}/> :
+    <StackedPageHeader context={<RepoContext owner={owner} repo={repo}/>} tabs={<RepoTabs owner={owner} repo={repo} repoId={repoId}/>}
+      icon={icon} title={title} docTitle={tabTitle}>{children}</StackedPageHeader>;
 }
 
-type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | 'settings' | undefined;
+type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | 'wiki' | 'settings' | undefined;
 
 /**
  * The code views that are the Code tab, as GitHub's Code tab stays selected on a repository's files, history,
@@ -154,7 +167,7 @@ export function tabOfPath(path: string): Tab {
   if (segs.length < 2) return undefined;
   const kind = segs[2];
   if (kind === undefined) return 'code';
-  return kind === 'issues' || kind === 'pulls' || kind === 'activity' || kind === 'settings' ? kind : undefined;
+  return kind === 'issues' || kind === 'pulls' || kind === 'activity' || kind === 'wiki' || kind === 'settings' ? kind : undefined;
 }
 
 /** One of the repository's tabs: in the bar, and the same entry as a row of "More" when the bar is too narrow. */
@@ -226,7 +239,11 @@ export const RepoTabs = observer(function RepoTabs({owner, repo, repoId}: {owner
       item: <MenuItem icon={CirclePlay} onSelect={() => void navigate(code)}>Actions</MenuItem>,
     },
     projects,
-    classic('wiki', `${base}/wiki`, BookOpen, 'Wiki'),
+    {
+      key: 'wiki',
+      tab: <TabLink><Link to="/$owner/$repo/wiki" params={{owner, repo}} {...cur('wiki')}><Icon icon={BookOpen} size="sm"/>Wiki</Link></TabLink>,
+      item: <MenuItem icon={BookOpen} onSelect={() => void navigate({to: '/$owner/$repo/wiki', params: {owner, repo}})}>Wiki</MenuItem>,
+    },
     {
       key: 'activity',
       // Every activity page (the Pulse of any period, the graphs) is this tab.

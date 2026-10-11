@@ -23,7 +23,7 @@ import {
   createRootRouteWithContext, createRoute, createRouter, Outlet, redirect, type RouterHistory, stringifySearchWith,
 } from '@tanstack/react-router';
 import {isLocalPath, sitePath} from './config.ts';
-import {appPageOf, nextPathOf} from './paths.ts';
+import {appPageOf, nextPathOf, wikiAddress} from './paths.ts';
 import {lazyView, whenIdle} from './lazy.tsx';
 import {RouteError, RouteNotFound, ShellNotFound} from './RouteStatus.tsx';
 import {loadRepo, repoFullName, type RepoMatch} from './repo.ts';
@@ -32,7 +32,7 @@ import {
 } from './search.ts';
 import {PAGE_SCROLLER} from './shell/Frame.tsx';
 import {Shell} from './shell/Shell.tsx';
-import {readSplash, type SkeletonShape} from './splash.ts';
+import {readSplash, type SkeletonHeader, type SkeletonShape} from './splash.ts';
 import type {App} from './store.ts';
 
 export interface RouterContext {
@@ -46,6 +46,8 @@ declare module '@tanstack/react-router' {
   interface StaticDataRouteOption {
     /** The skeleton the boot shell shows when the app reloads on this route (splash). */
     skeleton?: SkeletonShape;
+    /** The header's rows in that skeleton (default: one row): a repository page's breadcrumb, tabs and title row. */
+    header?: SkeletonHeader;
   }
 }
 
@@ -153,7 +155,7 @@ const repoHomeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'tabs'},
   component: lazyView(() => import('../features/repo/RepoHome.tsx'), 'RepoHome'),
 });
 
@@ -162,7 +164,7 @@ const repoIssuesRoute = createRoute({
   path: '/$owner/$repo/issues',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
   validateSearch: (s): IssueListSearch => issueListSearch(s),
-  staticData: {skeleton: 'list'},
+  staticData: {skeleton: 'list', header: 'toolbar'},
   component: lazyView(() => import('../features/repo/RepoViews.tsx'), 'RepoIssues'),
 });
 
@@ -171,7 +173,7 @@ const repoPullsRoute = createRoute({
   path: '/$owner/$repo/pulls',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
   validateSearch: (s): IssueListSearch => issueListSearch(s),
-  staticData: {skeleton: 'list'},
+  staticData: {skeleton: 'list', header: 'toolbar'},
   component: lazyView(() => import('../features/repo/RepoViews.tsx'), 'RepoPulls'),
 });
 
@@ -199,7 +201,7 @@ function settingsRoute<P extends `/$owner/$repo/settings${string}`>(path: P, vie
     getParentRoute: () => shellRoute,
     path,
     loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params as {owner: string; repo: string}, location),
-    staticData: {skeleton: 'detail'},
+    staticData: {skeleton: 'detail', header: 'toolbar'},
     component: lazyView(() => import('../features/settings/Settings.tsx'), view),
   });
 }
@@ -211,6 +213,84 @@ const settingsRoutes = [
   settingsRoute('/$owner/$repo/settings/hooks', 'SettingsHooks'),
   settingsRoute('/$owner/$repo/settings/keys', 'SettingsKeys'),
 ] as const;
+
+// The wiki (features/wiki): Forgejo's addresses (its Home, a page) and clean ones for what the classic wiki puts in
+// `?action=` (the page list, a new page, a page's editor: the classic addresses go on to them). The loader starts
+// fetching the page, so a hovered link (preload on intent) has it in memory when it is clicked.
+
+/** A classic wiki address with `?action=_pages`, `_new` or `_edit`: the app's view for it. */
+function wikiAction(app: App, location: {pathname: string; searchStr: string; hash: string}): void {
+  const q = new URLSearchParams(location.searchStr);
+  if (!q.get('action')) return;
+  const to = wikiAddress(location.pathname, location.searchStr);
+  if (!to) return;
+  q.delete('action');
+  const rest = q.toString();
+  // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's redirect protocol
+  throw redirect({href: sitePath(app.config, `${to}${rest ? `?${rest}` : ''}${location.hash ? `#${location.hash}` : ''}`), replace: true});
+}
+
+async function wikiLoader(app: App, params: {owner: string; repo: string}, location: {pathname: string; searchStr: string; hash: string}, page: string | undefined): Promise<RepoMatch> {
+  const match = await repoLoader(app, params, location);
+  const repoId = match.repoId;
+  if (repoId !== undefined && page !== undefined) {
+    void import('../features/wiki/data.ts').then((m) => {
+      m.prefetchWikiPage(app, repoId, params.owner, params.repo, page);
+    }, () => undefined);
+  }
+  return match;
+}
+
+const wikiView = (name: 'WikiHome' | 'WikiPageView' | 'WikiPages' | 'WikiNew' | 'WikiEdit') => lazyView(() => import('../features/wiki/WikiPage.tsx'), name);
+
+const wikiHomeRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/wiki',
+  beforeLoad: ({context: {app}, location}) => {
+    wikiAction(app, location);
+  },
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, 'Home'),
+  staticData: {skeleton: 'detail', header: 'toolbar'},
+  component: wikiView('WikiHome'),
+});
+
+const wikiPageRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/wiki/$page',
+  beforeLoad: ({context: {app}, location}) => {
+    wikiAction(app, location);
+  },
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, params.page),
+  staticData: {skeleton: 'detail', header: 'toolbar'},
+  component: wikiView('WikiPageView'),
+});
+
+const wikiPagesRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/wiki/-/pages',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, undefined),
+  staticData: {skeleton: 'list', header: 'toolbar'},
+  component: wikiView('WikiPages'),
+});
+
+const wikiNewRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/wiki/-/new',
+  // `title`: the page to create (a link to a page that does not exist yet).
+  validateSearch: (s): {title?: string} => (typeof s.title === 'string' && s.title ? {title: s.title} : {}),
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, undefined),
+  staticData: {skeleton: 'detail', header: 'toolbar'},
+  component: wikiView('WikiNew'),
+});
+
+const wikiEditRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/wiki/$page/-/edit',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => wikiLoader(app, params, location, params.page),
+  staticData: {skeleton: 'detail', header: 'toolbar'},
+  component: wikiView('WikiEdit'),
+});
+
 // A repository's activity (the classic /activity pages, laid out like GitHub's Insights): the Pulse of a period
 // (`$period`: daily … yearly, parsed by the view; a week by default) and the contributor graphs.
 const activityView = (name: 'ActivityPulse' | 'ActivityContributors' | 'ActivityCodeFrequency' | 'ActivityRecentCommits') =>
@@ -220,7 +300,7 @@ const repoActivityRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityPulse'),
 });
 
@@ -228,7 +308,7 @@ const repoActivityPeriodRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/$period',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityPulse'),
 });
 
@@ -236,7 +316,7 @@ const repoContributorsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/contributors',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityContributors'),
 });
 
@@ -244,7 +324,7 @@ const repoCodeFrequencyRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/code-frequency',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityCodeFrequency'),
 });
 
@@ -252,7 +332,7 @@ const repoRecentCommitsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/recent-commits',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityRecentCommits'),
 });
 
@@ -280,7 +360,7 @@ const codeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/-/next/code/$owner/$repo/$',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: lazyView(() => import('../features/code/CodePage.tsx'), 'CodePage'),
 });
 
@@ -365,6 +445,7 @@ const routeTree = rootRoute.addChildren([
     baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, ...settingsRoutes, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
+    wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
   ...devRoutes,

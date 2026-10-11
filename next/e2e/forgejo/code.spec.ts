@@ -16,7 +16,7 @@
 // Switching to a cached file and the 5 000-line diff's scrolling are timed in perf.spec.ts.
 // Results (timings) are attached to the test results and printed.
 
-import {expect, test} from '@playwright/test';
+import {expect, type Locator, test} from '@playwright/test';
 import {api, b64, ensureUser, ok} from '../lib/api.ts';
 import {signIn, watch} from '../lib/app.ts';
 import {blobSha as blobShaIn, changeFiles, codeUrl, goFile, type Pull, tsFile} from '../lib/code.ts';
@@ -87,6 +87,12 @@ test('repository browser: tree, highlighted file, blame, branches, history, comm
   await files.getByRole('option', {name: /^src/}).click();
   await page.getByRole('listbox', {name: 'Files'}).getByRole('option', {name: /^main\.go/}).click();
   await expect(page.getByRole('list', {name: /src\/main\.go, \d+ lines/})).toBeVisible();
+  // GitHub's header rows: the breadcrumb, the repository's tabs, then the file's path with its ref picker.
+  const below = async (a: Locator, b: Locator) => ((await a.boundingBox())?.y ?? 0) >= ((await b.boundingBox())?.y ?? Infinity) + 1;
+  const crumbs = page.getByRole('navigation', {name: 'Breadcrumb'});
+  const repoTabs = page.getByRole('navigation', {name: 'Repository'});
+  expect(await below(repoTabs, crumbs)).toBe(true);
+  expect(await below(page.getByRole('button', {name: 'Ref: main'}), repoTabs)).toBe(true);
   // Highlighted in the worker: keyword spans (classes only, no HTML from the file).
   await expect(page.locator('.text-syn-keyword').first()).toBeVisible({timeout: 15_000});
   await expect(page.locator('.text-syn-keyword').first()).toHaveText(/package|import|func/);

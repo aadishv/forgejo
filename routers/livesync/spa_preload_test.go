@@ -25,6 +25,8 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
 		"/acme/atlas/settings":               "src/features/settings/Settings.tsx",
 		"/acme/atlas/settings/hooks":         "src/features/settings/Settings.tsx",
+		"/acme/atlas/wiki":                   "src/features/wiki/WikiPage.tsx",
+		"/acme/atlas/wiki/Home/-/edit":       "src/features/wiki/WikiPage.tsx",
 		"/acme/atlas/activity":               "src/features/activity/Activity.tsx",
 		"/acme/atlas/activity/contributors":  "src/features/activity/Activity.tsx",
 	} {
@@ -34,7 +36,7 @@ func TestRouteModules(t *testing.T) {
 		}
 	}
 	assert.Nil(t, routeModules("/-/next/"))
-	assert.Nil(t, routeModules("/acme/atlas/wiki/x"))
+	assert.Nil(t, routeModules("/acme/atlas/settings/x"))
 }
 
 func TestPreloadHeaders(t *testing.T) {
