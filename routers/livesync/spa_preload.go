@@ -79,7 +79,7 @@ func routeModules(p string) []string {
 			return []string{"src/features/meta/MilestoneForm.tsx"}
 		case segs[2] == "milestone":
 			return []string{"src/features/meta/MilestonePage.tsx"}
-		case segs[2] == "settings":
+		case segs[2] == "settings" && (segs[3] == "collaboration" || segs[3] == "branches" || segs[3] == "hooks" || segs[3] == "keys"):
 			return []string{"src/features/settings/Settings.tsx"}
 		}
 	case 5:
