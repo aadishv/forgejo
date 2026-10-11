@@ -28,6 +28,7 @@ describe('tabOfPath', () => {
     expect(tabOfPath('/acme/website/pulls')).toBe('pulls');
     expect(tabOfPath('/-/next/code/acme/website/actions/-')).toBe('actions');
     expect(tabOfPath('/-/next/code/acme/website/actions/runs/4/-')).toBe('actions');
+    for (const path of ['/acme/website/activity', '/acme/website/activity/monthly', '/acme/website/activity/contributors']) expect(tabOfPath(path), path).toBe('activity');
   });
 
   test('anything else is no tab', () => {

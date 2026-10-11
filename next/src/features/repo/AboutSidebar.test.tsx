@@ -96,7 +96,11 @@ describe('the repository home\'s side pane', () => {
     expect(within(links).getAllByRole('link').map((a) => a.textContent)).toEqual(['Readme', 'View license', 'Activity', '12stars', '3watching', '1fork']);
     expect(within(links).getByRole('link', {name: 'Readme'}).getAttribute('href')).toBe('#readme');
     expect(within(links).getByRole('link', {name: 'View license'}).getAttribute('href')).toBe('/-/next/code/acme/website/src/branch/main/LICENSE/-');
-    for (const [name, path] of [['Activity', 'activity'], ['12stars', 'stars'], ['3watching', 'watchers'], ['1fork', 'forks']] as const) {
+    // Activity is the app's page; the people counts are classic.
+    const activity = within(links).getByRole('link', {name: 'Activity'});
+    expect(activity.getAttribute('href')).toBe('/acme/website/activity');
+    expect(activity.hasAttribute('data-classic')).toBe(false);
+    for (const [name, path] of [['12stars', 'stars'], ['3watching', 'watchers'], ['1fork', 'forks']] as const) {
       const a = within(links).getByRole('link', {name});
       expect(a.getAttribute('href')).toBe(`/acme/website/${path}`);
       expect(a.hasAttribute('data-classic')).toBe(true);

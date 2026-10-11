@@ -43,7 +43,7 @@ export function AboutSidebar(props: RepoProps) {
         <ForkOf repoId={props.repoId}/>
         <AsideLinks label="Repository">
           <TreeLinks {...props}/>
-          <ClassicRow owner={props.owner} repo={props.repo} path="activity" icon={Activity}>Activity</ClassicRow>
+          <AsideLink icon={Activity}><Link to="/$owner/$repo/activity" params={{owner: props.owner, repo: props.repo}}>Activity</Link></AsideLink>
           <Counts {...props}/>
         </AsideLinks>
       </AsideSection>
