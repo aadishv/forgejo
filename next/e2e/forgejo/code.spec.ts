@@ -108,11 +108,21 @@ test('repository browser: tree, highlighted file, blame, branches, history, comm
   // A name with a space.
   await page.goto(code('src/branch/main/docs/a b.txt'));
   await expect(page.getByText('spaces in the name')).toBeVisible({timeout: 15_000});
-  // Branches (from the pool), history and a commit with its diff.
-  await page.getByRole('link', {name: 'Branches'}).click();
+  // The overview's files are headed like GitHub's: the branch picker (to that branch's tree), the branches
+  // (from the pool) and the history; then a commit with its diff. The Code tab stays current on all of them.
+  await page.goto(`${BASE}/${USER}/${REPO}`);
+  const tabs = page.getByRole('navigation', {name: 'Repository'});
+  await expect(tabs.getByRole('link', {name: 'Code'})).toHaveAttribute('aria-current', 'page');
+  await page.getByRole('button', {name: 'Ref: main'}).click();
+  await page.getByRole('option', {name: /^small/}).click();
+  await expect(page).toHaveURL(/\/src\/branch\/small\/-$/);
+  await expect(tabs.getByRole('link', {name: 'Code'})).toHaveAttribute('aria-current', 'page');
+  await page.goBack();
+  await page.getByRole('link', {name: /^\d+ branches$/}).click();
   await expect(page.getByRole('option', {name: /^small/})).toBeVisible();
   await expect(page.getByRole('option', {name: /^main.*default/})).toBeVisible();
-  await page.getByRole('link', {name: 'Commits'}).click();
+  await page.goBack();
+  await page.getByRole('link', {name: 'History', exact: true}).click();
   await page.getByRole('option', {name: /Add sources/}).click();
   await expect(page.getByRole('list', {name: 'Changes'})).toBeVisible({timeout: 15_000});
   await expect(page.getByText('src/main.go').first()).toBeVisible();

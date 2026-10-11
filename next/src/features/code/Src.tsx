@@ -9,7 +9,7 @@
 // switching between files never waits.
 
 import {useNavigate, useRouterState} from '@tanstack/react-router';
-import {ChevronDown, File, Folder, FolderGit2, GitBranch, GitCommitHorizontal, History, Tag} from 'lucide-react';
+import {File, Folder, FolderGit2, GitBranch, History} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {sitePath} from '../../app/config.ts';
@@ -20,13 +20,14 @@ import {type RefKind, type Resolved, codeSplat, parentPath, resolveRef, shortSha
 import {CodeSource, encodePath, type FileContent} from '../../code/source.ts';
 import type {APIBlame, APITree, APITreeEntry} from '../../protocol/types.gen.ts';
 import {
-  BlameCell, Button, CodeLine, CodeTokens, CommandPopover, EmptyState, Icon, LineNo, ListRow, type PickOption, SegmentedControl, Skeleton, TextLink,
+  BlameCell, Button, CodeLine, CodeTokens, EmptyState, Icon, LineNo, ListRow, SegmentedControl, Skeleton, TextLink,
 } from '../../ui/index.ts';
 import {usePool} from '../issues/cells.tsx';
 import {ago} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {hasRefs, type Loaded, refTable, useLoad, useSource} from './hooks.ts';
 import {Lines, type LinesHandle} from './Lines.tsx';
+import {RefMenu} from './RefMenu.tsx';
 import {RowList} from './RowList.tsx';
 import {CodeLink, codeTo, useCodeRows} from './nav.tsx';
 import {Unloaded} from './states.tsx';
@@ -160,36 +161,6 @@ const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blam
         </Button>
       )}
     </>
-  );
-});
-
-/**
- * The branch or tag on screen, and every other one to switch to (same path): a picker that filters as you
- * type (Enter takes the first match), branches first.
- */
-export const RefMenu = observer(function RefMenu({owner, repo, repoId, at, view}: {owner: string; repo: string; repoId: number; at: Resolved; view: 'src' | 'blame' | 'commits'}) {
-  const pool = usePool();
-  const navigate = useNavigate();
-  const refs = refTable(pool, repoId);
-  const branches = [...refs.branches.keys()].sort((a, b) => (a === refs.defaultBranch ? -1 : b === refs.defaultBranch ? 1 : a.localeCompare(b)));
-  const tags = [...refs.tags.keys()].sort((a, b) => b.localeCompare(a, undefined, {numeric: true}));
-  const current = `${at.kind}:${at.ref}`;
-  const option = (kind: RefKind, ref: string): PickOption => ({
-    value: `${kind}:${ref}`, label: ref, group: kind === 'branch' ? 'Branches' : 'Tags', icon: kind === 'branch' ? GitBranch : Tag,
-    meta: kind === 'branch' && ref === refs.defaultBranch ? 'default' : undefined, checked: current === `${kind}:${ref}`,
-    onSelect: () => {
-      void navigate(codeTo(owner, repo, codeSplat(view, {kind, ref}, at.path)));
-    },
-  });
-  const label = at.kind === 'commit' ? shortSha(at.sha) : at.ref;
-  return (
-    <CommandPopover width="md" label="Switch branch or tag" placeholder="Find a branch or tag…" empty="No branch or tag is on this device."
-      options={[...branches.map((b) => option('branch', b)), ...tags.map((t) => option('tag', t))]}
-      trigger={
-        <Button size="sm" icon={at.kind === 'tag' ? Tag : at.kind === 'commit' ? GitCommitHorizontal : GitBranch} aria-label={`Ref: ${label}`}>
-          <span className="max-w-xs truncate font-mono">{label}</span><Icon icon={ChevronDown} size="sm"/>
-        </Button>
-      }/>
   );
 });
 
