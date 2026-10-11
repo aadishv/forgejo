@@ -159,6 +159,25 @@ export function decodeFile(bytes: ArrayBuffer, path: string): FileContent {
   return {kind: 'text', text: new TextDecoder('utf-8').decode(bytes), size};
 }
 
+/** A commit's file paths (CodeSource.paths): every blob, in git's order (by path). */
+export interface PathList {
+  paths: string[];
+  /** The tree had more entries than were asked for (MAX_TREE_PAGES pages): the rest is not listed. */
+  truncated: boolean;
+}
+
+/** One page of API v1's recursive tree (the fields read). */
+interface ApiTree {
+  tree?: {path: string; type: string}[] | null;
+  truncated?: boolean;
+  total_count?: number;
+}
+
+/** A recursive tree is read up to this many pages (100 000 entries at Forgejo's default page size). */
+const MAX_TREE_PAGES = 100;
+/** Pages asked for together. */
+const TREE_PAGES_AT_ONCE = 4;
+
 interface ApiCommit {
   sha: string;
   commit: {message: string; author: {name: string; email: string; date: string}};
@@ -578,6 +597,38 @@ export class CodeSource {
       const j = await readJson(res) as {total_commits?: number; commits?: ApiCommit[] | null};
       const commits = (j.commits ?? []).map(commitInfo);
       return {commits, total: j.total_commits ?? commits.length};
+    });
+  }
+
+  static pathsKey(repoId: number, commit: string): string {
+    return `paths:${String(repoId)}:${commit}`;
+  }
+
+  /**
+   * Every file's path at a commit (the file finder, ⌘K's files), from API v1's recursive tree: asked for once per
+   * commit and kept like the rest of the cache (there at once, offline too, on the next visit). Forgejo pages it
+   * ([api] DEFAULT_GIT_TREES_PER_PAGE, 1000 by default): the other pages are asked for together, up to MAX_TREE_PAGES.
+   */
+  paths(repoId: number, commit: string): Promise<PathList> {
+    return this.cached(CodeSource.pathsKey(repoId, commit), async () => {
+      const page = async (n: number) => {
+        const res = await this.request('v1', `${this.repoPath(repoId)}/git/trees/${commit}?recursive=true&per_page=100000&page=${String(n)}`);
+        return await readJson(res) as ApiTree;
+      };
+      const first = await page(1);
+      const per = first.tree?.length ?? 0;
+      const total = first.total_count ?? per;
+      const pages = first.truncated && per > 0 ? Math.ceil(total / per) : 1;
+      const asked = Math.min(pages, MAX_TREE_PAGES);
+      const rest: ApiTree[] = [];
+      // A few at a time: a large tree is not a burst of a hundred requests.
+      for (let n = 2; n <= asked; n += TREE_PAGES_AT_ONCE) {
+        const batch = Array.from({length: Math.min(TREE_PAGES_AT_ONCE, asked - n + 1)}, (_, i) => page(n + i));
+        rest.push(...await Promise.all(batch));
+      }
+      const paths: string[] = [];
+      for (const t of [first, ...rest]) for (const e of t.tree ?? []) if (e.type === 'blob') paths.push(e.path);
+      return {paths, truncated: pages > asked};
     });
   }
 

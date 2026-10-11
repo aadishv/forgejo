@@ -179,7 +179,7 @@ describe('signed in', () => {
     expect(within(sidebar).getByRole('link', {name: 'website'}).getAttribute('aria-current')).toBe('page');
   });
 
-  test('the overview\'s files are headed like GitHub\'s: the branch picker, the branches, the history', async () => {
+  test('the overview\'s files are headed like GitHub\'s: the branch picker, the branches and tags, Go to file, Code, the history', async () => {
     const s = signedIn();
     const branch = (id: number, name: string, sha: string) => ({
       id, repo_id: 20, name, commit_id: sha, commit_message: `Tip of ${name}`, commit_time: '2026-10-01T00:00:00Z', pusher_id: 1,
@@ -201,6 +201,9 @@ describe('signed in', () => {
     expect(picker.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(files.contains(picker)).toBe(false);
     expect(screen.getByRole('link', {name: '2 branches'}).getAttribute('href')).toBe('/-/next/code/acme/website/branches/-');
+    expect(screen.getByRole('link', {name: '0 tags'}).getAttribute('href')).toBe('/-/next/code/acme/website/tags/-');
+    expect(files.contains(screen.getByRole('button', {name: 'Go to file'}))).toBe(false);
+    expect(files.contains(screen.getByRole('button', {name: 'Code'}))).toBe(false);
     expect(screen.getByRole('link', {name: 'History'}).getAttribute('href')).toBe('/-/next/code/acme/website/commits/branch/main/-');
     expect(screen.getByRole('link', {name: 'Tip of main'})).toBeTruthy();
     expect(screen.queryByRole('link', {name: 'Browse code'})).toBeNull();

@@ -18,7 +18,7 @@ export {Dialog, DialogClose, DialogTrigger} from './Dialog.tsx';
 export {EmptyState} from './EmptyState.tsx';
 export {Entry, EntryList} from './Entry.tsx';
 export {Hint, Icon, type LucideIcon} from './Icon.tsx';
-export {Checkbox, EditableHeading, EditorFrame, Input, TextArea, TitleInput} from './Input.tsx';
+export {Checkbox, CopyField, EditableHeading, EditorFrame, Input, TextArea, TitleInput} from './Input.tsx';
 export {Kbd, Shortcut} from './Kbd.tsx';
 export {ListGroupHeader, ListRow} from './ListRow.tsx';
 export {NavGroup, NavHeading, NavItem} from './NavItem.tsx';

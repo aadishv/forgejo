@@ -1786,6 +1786,13 @@ export interface NextConfig {
    */
   protocol: number /* int */;
   /**
+   * SSHClonePrefix is what a repository's SSH clone URL starts with
+   * ("git@code.example:" or "ssh://git@code.example:2222/"); the URL is
+   * the prefix + "{owner}/{repo}.git", as Forgejo composes it. Omitted
+   * when SSH is disabled ([server] DISABLE_SSH).
+   */
+  ssh_clone_prefix?: string;
+  /**
    * OAuth is the UI's OAuth2 client; null when the UI cannot sign in
    * (Forgejo's OAuth2 provider is disabled).
    */

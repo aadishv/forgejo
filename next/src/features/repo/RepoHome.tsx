@@ -3,13 +3,14 @@
 
 // A repository's home (/{owner}/{repo}), the Code tab's first page: its
 // name and kind; above its files, like GitHub's, the branch picker (to that
-// branch's tree), the number of branches (the branches page) and the latest
-// commit with its History; its top-level files and its README from the code
+// branch's tree), the numbers of branches and tags (their pages), Go to file
+// (FileFinder.tsx, key T) and the Code menu (clone URLs, archives:
+// CodeMenu.tsx), all from the pool at once; the latest commit with its History; its top-level files and its README from the code
 // cache (by commit and blob SHA: there offline once seen); and beside them
 // the side pane (AboutSidebar.tsx: what it is, its releases and languages).
 // The tabs lead to everything else. Its own chunk.
 
-import {Code2, Folder, FolderGit2, GitBranch, History, SquarePen} from 'lucide-react';
+import {Code2, Folder, FolderGit2, GitBranch, History, SquarePen, Tag} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
 import {type ReactNode, useEffect, useMemo} from 'react';
 import {whenIdle} from '../../app/lazy.tsx';
@@ -24,6 +25,7 @@ import type {APITree, APITreeEntry} from '../../protocol/types.gen.ts';
 import {Badge, Button, EmptyState, Icon, ListRow, SkeletonText} from '../../ui/index.ts';
 import {codeSplat} from '../../code/refs.ts';
 import {refTable, useLoad, useSource} from '../code/hooks.ts';
+import {GoToFile} from '../code/FileFinder.tsx';
 import {CodeLink} from '../code/nav.tsx';
 import {RefMenu} from '../code/RefMenu.tsx';
 import {ReadmePanel, readmeOf} from '../code/Rendered.tsx';
@@ -31,6 +33,8 @@ import {Unloaded} from '../code/states.tsx';
 import {entryParts, FilesPanel, RefCommit, treeOrder} from '../code/tree.tsx';
 import {usePool} from '../issues/cells.tsx';
 import {AboutSidebar} from './AboutSidebar.tsx';
+import {plural} from './about.ts';
+import {CodeMenu} from './CodeMenu.tsx';
 import {RepoHeader, Unavailable, useRepoPage} from './repoPage.tsx';
 import {EmptyRepo} from '../code/states.tsx';
 
@@ -102,16 +106,28 @@ const Files = observer(function Files({owner, repo, repoId}: {owner: string; rep
       </FilesPanel>
     );
   }
-  // GitHub's bar above the files: the branch picker and how many branches there are (the branches page).
-  const count = refs.branches.size;
+  // GitHub's bar above the files: on the left the branch picker and how many branches and tags there are (their
+  // pages); on the right Go to file and the Code menu. From the pool and the configuration: there at once, the same
+  // size before and after the tree arrives; it wraps on a narrow page.
+  const branches = refs.branches.size;
+  const tags = refs.tags.size;
   const toolbar = (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <RefMenu owner={owner} repo={repo} repoId={repoId} at={{kind: 'branch', ref: branch, sha, path: ''}} view="src"/>
       <Button size="sm" variant="ghost" asChild>
         <CodeLink owner={owner} repo={repo} to="branches">
-          <Icon icon={GitBranch} size="sm"/><span className="tabular-nums">{`${String(count)} ${count === 1 ? 'branch' : 'branches'}`}</span>
+          <Icon icon={GitBranch} size="sm"/><span className="tabular-nums">{`${String(branches)} ${plural(branches, 'branch', 'branches')}`}</span>
         </CodeLink>
       </Button>
+      <Button size="sm" variant="ghost" asChild>
+        <CodeLink owner={owner} repo={repo} to="tags">
+          <Icon icon={Tag} size="sm"/><span className="tabular-nums">{`${String(tags)} ${plural(tags, 'tag')}`}</span>
+        </CodeLink>
+      </Button>
+      <div className="ms-auto flex flex-wrap items-center gap-2">
+        <GoToFile owner={owner} repo={repo} repoId={repoId} at={{kind: 'branch', ref: branch, sha}}/>
+        <CodeMenu owner={owner} repo={repo} branch={branch}/>
+      </div>
     </div>
   );
   // The latest commit's bar, with the history on the right (API v1 has no commit count the pool holds: "History").

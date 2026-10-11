@@ -27,6 +27,7 @@ import {ago} from '../issues/format.ts';
 import {CodeFrame, type CodeViewProps} from './CodePage.tsx';
 import {hasRefs, type Loaded, refTable, useLoad, useSource} from './hooks.ts';
 import {Lines, type LinesHandle} from './Lines.tsx';
+import {GoToFile} from './FileFinder.tsx';
 import {RefMenu} from './RefMenu.tsx';
 import {RowList} from './RowList.tsx';
 import {CodeLink, codeTo, useCodeRows} from './nav.tsx';
@@ -149,6 +150,7 @@ const SrcControls = observer(function SrcControls({owner, repo, repoId, at, blam
       <Button size="sm" variant="ghost" asChild>
         <CodeLink owner={owner} repo={repo} to={codeSplat('commits', at, at.path)}><Icon icon={History} size="sm"/>History</CodeLink>
       </Button>
+      <GoToFile owner={owner} repo={repo} repoId={repoId} at={at}/>
       {/* Which view of the file this is, as a switch (a link named after the other view read as a pressed button). */}
       {file && (
         <SegmentedControl label="Show the file as" value={blame ? 'blame' : 'src'} onChange={(v) => {

@@ -3,7 +3,8 @@
 
 // A repository home's side pane, in GitHub's order: About (description,
 // website, topics, where it was forked from, Readme / License / Activity,
-// stars, watchers, forks, then the clone URL and the archive), Releases
+// stars, watchers, forks; the clone URLs and the archives are in the file
+// bar's Code menu, CodeMenu.tsx, as on GitHub), Releases
 // (the count, the latest, Tags) and Languages. Everything but the languages
 // comes from the pool and the code cache (no request of its own: the README
 // and license links read the root tree the file list loads); the languages
@@ -11,22 +12,19 @@
 // cache. Each part observes only the fields it shows.
 
 import {Link} from '@tanstack/react-router';
-import {Activity, BookOpen, Copy, Eye, FileArchive, GitFork, Link2, Scale, Star, Tag} from 'lucide-react';
+import {Activity, BookOpen, Eye, GitFork, Link2, Scale, Star, Tag} from 'lucide-react';
 import {observer} from 'mobx-react-lite';
-import {Fragment, type MouseEvent, useId} from 'react';
+import type {MouseEvent} from 'react';
 import {CLASSIC_HINT, classicHref} from '../../app/classic.ts';
-import {sitePath} from '../../app/config.ts';
 import {hrefOf, useLinkClick} from '../../app/links.ts';
-import {notify} from '../../app/notices.ts';
 import {codePath} from '../../app/paths.ts';
 import {useApp} from '../../app/store.ts';
 import {CodeSource} from '../../code/source.ts';
 import type {APITree} from '../../protocol/types.gen.ts';
-import {AsideLink, AsideLinks, AsideSection, Badge, Icon, IconButton, type LucideIcon, ShareBar, TextLink} from '../../ui/index.ts';
+import {AsideLink, AsideLinks, AsideSection, Badge, Icon, type LucideIcon, ShareBar, TextLink} from '../../ui/index.ts';
 import {refTable, useLoad, useSource} from '../code/hooks.ts';
 import {codeTo} from '../code/nav.tsx';
 import {README_ID, readmeOf} from '../code/Rendered.tsx';
-import {cloneUrl} from '../code/states.tsx';
 import {usePool} from '../issues/cells.tsx';
 import {fullDate, shortDate} from '../issues/format.ts';
 import {languageShares, licenseOf, plural, releaseSummary, tagCount} from './about.ts';
@@ -48,8 +46,6 @@ export function AboutSidebar(props: RepoProps) {
           <ClassicRow owner={props.owner} repo={props.repo} path="activity" icon={Activity}>Activity</ClassicRow>
           <Counts {...props}/>
         </AsideLinks>
-        <CloneField owner={props.owner} repo={props.repo}/>
-        <Archive {...props}/>
       </AsideSection>
       <Releases {...props}/>
       <Languages repoId={props.repoId}/>
@@ -156,47 +152,6 @@ const Count = observer(function Count({owner, repo, repoId, field, path, icon, o
   if (!r) return null;
   const n = r.get(field);
   return <ClassicRow owner={owner} repo={repo} path={path} icon={icon} count={n}>{plural(n, one, many)}</ClassicRow>;
-});
-
-/**
- * The clone URL over HTTP(S), compact: a small label, the URL whole (QA: a field cut it to its host; wrapped after a
- * slash when it is longer than the pane, never mid-word; one click selects it all) and a copy button.
- */
-function CloneField({owner, repo}: {owner: string; repo: string}) {
-  const app = useApp();
-  const clone = cloneUrl(app.config.app_url, owner, repo);
-  const id = useId();
-  const copy = () => {
-    void navigator.clipboard.writeText(clone).then(() => {
-      notify(app, {tone: 'success', title: 'Clone URL copied'});
-    }, () => undefined);
-  };
-  return (
-    <div role="group" aria-labelledby={id} className="flex min-w-0 flex-col gap-1">
-      <span id={id} className="text-sm text-fg-subtle">Clone over HTTPS</span>
-      <span className="flex min-w-0 items-start gap-1">
-        <code className="min-w-0 flex-1 py-0.5 font-mono text-code break-normal text-fg select-all">
-          {clone.split(/(?<=\/)/).map((part, i) => <Fragment key={i}>{part}<wbr/></Fragment>)}
-        </code>
-        <IconButton size="sm" icon={Copy} label="Copy the clone URL" onClick={copy}/>
-      </span>
-    </div>
-  );
-}
-
-/** The default branch as a ZIP archive (not for an empty repository: there is nothing to archive). */
-const Archive = observer(function Archive({owner, repo, repoId}: RepoProps) {
-  const app = useApp();
-  const r = usePool().model('Repository').get(repoId);
-  if (!r || r.get('empty')) return null;
-  const branch = r.get('default_branch');
-  return (
-    <AsideLinks>
-      <AsideLink icon={FileArchive}>
-        <a href={sitePath(app.config, `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/archive/${encodeURIComponent(branch)}.zip`)} download>Download ZIP</a>
-      </AsideLink>
-    </AsideLinks>
-  );
 });
 
 /** Releases: the count, the latest (or that there are none), the rest, and the tags (their only way in). */
