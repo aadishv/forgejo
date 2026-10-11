@@ -49,8 +49,9 @@ import (
 // Segments: a literal, "{owner}" (a usable user or organization name),
 // "{repo}" (a usable repository name), "{index}" (a number) or "{temp}" (the
 // address "new-<uuid>" the UI gives an issue created offline until Forgejo
-// numbers it: opened later, the UI goes on to the issue it became) or
-// "{period}" (a period of the activity page: activityPeriods). Extend
+// numbers it: opened later, the UI goes on to the issue it became), "{period}"
+// (a period of the activity page: activityPeriods), "{page}" (a wiki page's
+// address: any segment but wikiReserved) or "{code}". Extend
 // this table when the UI supports a route (F3–F7).
 var spaRoutes = [][]string{
 	{},                    // the dashboard
@@ -64,12 +65,20 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "issues", "{temp}"},
 	{"{owner}", "{repo}", "pulls"},
 	{"{owner}", "{repo}", "pulls", "{index}"},
-	{"{owner}", "{repo}", "{code}"}, // a code address (codeAddress); the app opens its code view for it
+	{"{owner}", "{repo}", "{code}"},               // a code address (codeAddress); the app opens its code view for it
 	{"{owner}", "{repo}", "activity"},             // the activity (Pulse) of the last week
 	{"{owner}", "{repo}", "activity", "{period}"}, // … of another period (activityPeriods)
 	{"{owner}", "{repo}", "activity", "contributors"},
 	{"{owner}", "{repo}", "activity", "code-frequency"},
 	{"{owner}", "{repo}", "activity", "recent-commits"},
+	// The wiki: its Home, a page, the page list, a new page, a page's editor
+	// (the classic ?action=_pages, _new and _edit open the same views; a
+	// page's revisions stay classic: wikiClassic).
+	{"{owner}", "{repo}", "wiki"},
+	{"{owner}", "{repo}", "wiki", "{page}"},
+	{"{owner}", "{repo}", "wiki", "-", "pages"},
+	{"{owner}", "{repo}", "wiki", "-", "new"},
+	{"{owner}", "{repo}", "wiki", "{page}", "-", "edit"},
 }
 
 // activityPeriods are the periods of the classic activity page
@@ -78,6 +87,11 @@ var spaRoutes = [][]string{
 var activityPeriods = map[string]bool{
 	"daily": true, "halfweekly": true, "weekly": true, "monthly": true, "quarterly": true, "semiyearly": true, "yearly": true,
 }
+
+// wikiReserved are the wiki's segments that name no page: the classic
+// wiki's own routes (raw files, search) and the names Forgejo reserves
+// (services/wiki reservedWikiNames). Keep in step with next/src/sw/routes.ts.
+var wikiReserved = map[string]bool{"raw": true, "search": true, "_pages": true, "_new": true, "_edit": true}
 
 // reTempIssue is the address of an issue created offline (next/src/features/issue/paths.ts TEMP_PATH).
 var reTempIssue = regexp.MustCompile(`^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$`)
@@ -199,6 +213,10 @@ next:
 				if !reTempIssue.MatchString(seg) {
 					continue next
 				}
+			case "{page}":
+				if seg == "" || seg == "." || seg == ".." || wikiReserved[seg] {
+					continue next
+				}
 			case "{period}":
 				if !activityPeriods[seg] {
 					continue next
@@ -230,6 +248,14 @@ func profileTab(p string, req *http.Request) bool {
 	}
 	tab := req.URL.Query().Get("tab")
 	return tab != "" && tab != "repositories"
+}
+
+// wikiClassic reports whether req asks for a view of the wiki the UI does
+// not render (/{owner}/{repo}/wiki/{page}?action=_revision: a page's
+// revisions). Keep in step with next/src/sw/routes.ts.
+func wikiClassic(p string, req *http.Request) bool {
+	segs := strings.Split(strings.Trim(p, "/"), "/")
+	return len(segs) >= 3 && segs[2] == "wiki" && req.URL.Query().Get("action") == "_revision"
 }
 
 // optedIn reports whether req is a document navigation (Sec-Fetch-Dest:
@@ -786,7 +812,7 @@ func (s *spa) document(req *http.Request) bool {
 			p = p[len(sub):]
 		}
 	}
-	return spaRoute(p) && !profileTab(p, req)
+	return spaRoute(p) && !profileTab(p, req) && !wikiClassic(p, req)
 }
 
 // serveAsset answers GET /-/next/assets/*: hashed, immutable files.

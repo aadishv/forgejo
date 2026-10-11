@@ -218,6 +218,11 @@ export interface APIViewedUpdate {
  * for README.md with the tree, before it knows the name: no such file is
  * an answer, Missing, not an error; 404 for no such commit, 413 for a file
  * too large to display).
+ * With Wiki, Text is a page of the repository's wiki, rendered as the
+ * classic wiki page renders it (Ref, Path and Commit are not used): links
+ * resolve to the wiki's pages (/{owner}/{repo}/wiki/{page}) and images to
+ * its files (/{owner}/{repo}/wiki/raw/{path}). Permission: the
+ * repository's wiki unit.
  */
 export interface APIMarkupRequest {
   repo_id: number /* int64 */;
@@ -225,6 +230,7 @@ export interface APIMarkupRequest {
   path: string;
   text: string;
   commit?: string;
+  wiki?: boolean;
 }
 /**
  * APIMarkupResponse is the rendered (sanitized) HTML; Missing: the request

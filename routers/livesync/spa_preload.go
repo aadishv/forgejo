@@ -43,6 +43,9 @@ func routeModules(p string) []string {
 		}
 		return nil
 	}
+	if len(segs) >= 3 && segs[2] == "wiki" {
+		return []string{"src/features/wiki/WikiPage.tsx"}
+	}
 	if len(segs) >= 3 && segs[2] == "activity" {
 		return []string{"src/features/activity/Activity.tsx"}
 	}

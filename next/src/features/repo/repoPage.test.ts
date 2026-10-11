@@ -23,7 +23,9 @@ describe('tabOfPath', () => {
     ]) expect(tabOfPath(path), path).toBe('code');
   });
 
-  test('issues, pull requests and Actions are their own tabs', () => {
+  test('issues, pull requests, Actions, the wiki and the activity are their own tabs', () => {
+    expect(tabOfPath('/acme/website/wiki')).toBe('wiki');
+    expect(tabOfPath('/acme/website/wiki/Home/-/edit')).toBe('wiki');
     expect(tabOfPath('/acme/website/issues')).toBe('issues');
     expect(tabOfPath('/acme/website/pulls')).toBe('pulls');
     expect(tabOfPath('/-/next/code/acme/website/actions/-')).toBe('actions');
@@ -34,7 +36,7 @@ describe('tabOfPath', () => {
   test('anything else is no tab', () => {
     expect(tabOfPath('/acme')).toBeUndefined();
     expect(tabOfPath('/')).toBeUndefined();
-    expect(tabOfPath('/acme/website/wiki')).toBeUndefined();
+    expect(tabOfPath('/acme/website/settings')).toBeUndefined();
     expect(tabOfPath('/-/next/code/acme/website/nonsense/-')).toBeUndefined();
     expect(tabOfPath('/-/next/acme/website/settings')).toBeUndefined();
     expect(tabOfPath('/-/next/projects/3')).toBeUndefined();
