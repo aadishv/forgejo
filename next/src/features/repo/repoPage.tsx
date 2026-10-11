@@ -172,7 +172,7 @@ export function RepoTabs({owner, repo, repoId}: {owner: string; repo: string; re
   );
 }
 
-/** "More": the repository's boards (here) and what only the classic UI has (wiki, activity, settings). */
+/** "More": the repository's boards and wiki (here), and what only the classic UI has (activity, settings). */
 const RepoMore = observer(function RepoMore({owner, repo, repoId}: {owner: string; repo: string; repoId: number | undefined}) {
   const s = useSession();
   const app = useApp();
@@ -188,8 +188,9 @@ const RepoMore = observer(function RepoMore({owner, repo, repoId}: {owner: strin
           <MenuItem key={b.id} icon={KanbanSquare} onSelect={() => void navigate({to: '/-/next/projects/$id', params: {id: String(b.id)}})}>{b.get('title')}</MenuItem>
         ))}
         {boards.length > 0 && <MenuSeparator/>}
+        <MenuItem icon={BookOpen} onSelect={() => void navigate({to: '/$owner/$repo/wiki', params: {owner, repo}})}>Wiki</MenuItem>
+        <MenuSeparator/>
         <MenuLabel>In the classic UI</MenuLabel>
-        <ClassicMenuItem to={`${base}/wiki`} icon={BookOpen}>Wiki</ClassicMenuItem>
         <ClassicMenuItem to={`${base}/activity`} icon={Activity}>Activity</ClassicMenuItem>
         <ClassicMenuItem to={`${base}/projects`} icon={KanbanSquare}>Projects</ClassicMenuItem>
         {admin && <ClassicMenuItem to={`${base}/settings`} icon={Settings}>Settings</ClassicMenuItem>}

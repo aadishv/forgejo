@@ -46,7 +46,7 @@ package protocol
 //	PUT    /-/sync/api/issues/{id}/viewed                   APIViewedUpdate → 200 APIViewedFiles (write:repository)
 //	PUT    /-/sync/api/issues/{id}/project                  APIIssueProject → 204              (write:issue)
 //	POST   /-/sync/api/markdown                             APIMarkdownRequest → 200 APIMarkdownResponse
-//	POST   /-/sync/api/markup                               APIMarkupRequest → 200 APIMarkupResponse (code unit)
+//	POST   /-/sync/api/markup                               APIMarkupRequest → 200 APIMarkupResponse (code unit; wiki unit with Wiki)
 //	GET    /-/sync/api/repos/{id}/tree/{commit}[/{path}]    → 200 APITree               (immutable)
 //	GET    /-/sync/api/repos/{id}/raw/{commit}/{path}       → 200 the file's bytes      (immutable, ETag = blob SHA)
 //	GET    /-/sync/api/repos/{id}/blobs/{sha}               → 200 the blob's bytes      (immutable)
@@ -247,12 +247,19 @@ type APIViewedUpdate struct {
 // for README.md with the tree, before it knows the name: no such file is
 // an answer, Missing, not an error; 404 for no such commit, 413 for a file
 // too large to display).
+//
+// With Wiki, Text is a page of the repository's wiki, rendered as the
+// classic wiki page renders it (Ref, Path and Commit are not used): links
+// resolve to the wiki's pages (/{owner}/{repo}/wiki/{page}) and images to
+// its files (/{owner}/{repo}/wiki/raw/{path}). Permission: the
+// repository's wiki unit.
 type APIMarkupRequest struct {
 	RepoID int64  `json:"repo_id"`
 	Ref    string `json:"ref"`
 	Path   string `json:"path"`
 	Text   string `json:"text"`
 	Commit string `json:"commit,omitempty"`
+	Wiki   bool   `json:"wiki,omitempty"`
 }
 
 // APIMarkupResponse is the rendered (sanitized) HTML; Missing: the request
