@@ -12,7 +12,7 @@
 
 import {expect, type Page, test} from '@playwright/test';
 import {api, apiJson, type ApiIssue, newIssue, ok, seed} from '../lib/api.ts';
-import {indicator, issueList, issueTitle, sidebar, sidebarProp, signedIn, toggleLabel, watch} from '../lib/app.ts';
+import {indicator, issueList, issueTitle, sidebar, sidebarProp, signedIn, toggleLabel, unsyncedButton, watch} from '../lib/app.ts';
 import {goOffline, goOnline, storedGroup, storedRecords} from '../lib/device.ts';
 import {ALICE, aliceAuth, BASE, USER} from '../lib/env.ts';
 
@@ -133,7 +133,7 @@ test('a collaborator removed mid-session: the repository is purged from her devi
   // Not on the server's issue (unsent, or refused), and the change waits in "Unsynced changes".
   expect((await apiJson<ApiIssue>('GET', `/repos/${USER}/${REPO}/issues/${String(target.number)}`)).labels.map((l) => l.name)).not.toContain('security');
   await expect(indicator(page)).toContainText('1 pending', {timeout: 15_000});
-  await indicator(page).click();
+  await unsyncedButton(page).click();
   const panel = page.getByRole('dialog', {name: 'Unsynced changes'});
   const notSent = panel.getByRole('region', {name: 'Not sent'});
   await expect(notSent).toContainText('Adding the label “security”');

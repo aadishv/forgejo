@@ -157,6 +157,17 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/settings/hooks/3":       false,
 		"/user2/repo1.wiki/settings":          false,
 		"/user/settings/hooks":                false,
+		// The activity pages.
+		"/user2/repo1/activity":                   true,
+		"/user2/repo1/activity/monthly":           true,
+		"/user2/repo1/activity/yearly":            true,
+		"/user2/repo1/activity/hourly":            false, // no such period: the classic page (which shows a week)
+		"/user2/repo1/activity/contributors":      true,
+		"/user2/repo1/activity/code-frequency":    true,
+		"/user2/repo1/activity/recent-commits":    true,
+		"/user2/repo1/activity/contributors/data": false, // the classic graphs' JSON
+		"/user2/repo1/activity/weekly/x":          false,
+		"/user2/repo1/activity_author_data":       false,
 	} {
 		assert.Equal(t, want, spaRoute(p), p)
 	}

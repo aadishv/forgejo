@@ -16,6 +16,13 @@ test('canonical routes (B8 spaRoutes) and the rest', () => {
   for (const p of ['/acme/repo/compare/main..feature', '/acme/repo/compare/main...feature.diff', '/acme/repo/compare/feature.patch', '/acme/repo/compare/main...', '/acme/repo/compare/...x']) {
     expect(isSpaRoute(p), p).toBe(false);
   }
+  // The activity pages (spa.go activityPeriods): the Pulse of a period, and its graphs.
+  for (const p of ['/acme/repo/activity', '/acme/repo/activity/monthly', '/acme/repo/activity/daily', '/acme/repo/activity/contributors', '/acme/repo/activity/code-frequency', '/acme/repo/activity/recent-commits']) {
+    expect(isSpaRoute(p), p).toBe(true);
+  }
+  for (const p of ['/acme/repo/activity/hourly', '/acme/repo/activity/contributors/data', '/acme/repo/activity/weekly/x', '/acme/repo/activity_author_data']) {
+    expect(isSpaRoute(p), p).toBe(false);
+  }
   // The classic page asked for by name, and an owner's profile tabs, are classic.
   expect(isSpaRoute('/acme/repo/issues', '?ui=classic')).toBe(false);
   expect(isSpaRoute('/acme', '?tab=activity')).toBe(false);

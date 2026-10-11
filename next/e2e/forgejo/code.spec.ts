@@ -94,6 +94,8 @@ test('repository browser: tree, highlighted file, blame, branches, history, comm
   await page.getByRole('radio', {name: 'Blame'}).click();
   await expect(page.getByRole('list', {name: 'Blame of src/main.go'})).toBeVisible({timeout: 15_000});
   await expect(page.getByText('Add sources').first()).toBeVisible();
+  // Highlighted too (the same highlighting, by blob SHA: from memory).
+  await expect(page.getByRole('list', {name: 'Blame of src/main.go'}).locator('.text-syn-keyword').first()).toBeVisible();
   // Hostile file name and content: text.
   await page.goto(code('src/branch/main/docs'));
   await page.getByRole('option', {name: /onerror/}).click();

@@ -211,6 +211,50 @@ const settingsRoutes = [
   settingsRoute('/$owner/$repo/settings/hooks', 'SettingsHooks'),
   settingsRoute('/$owner/$repo/settings/keys', 'SettingsKeys'),
 ] as const;
+// A repository's activity (the classic /activity pages, laid out like GitHub's Insights): the Pulse of a period
+// (`$period`: daily … yearly, parsed by the view; a week by default) and the contributor graphs.
+const activityView = (name: 'ActivityPulse' | 'ActivityContributors' | 'ActivityCodeFrequency' | 'ActivityRecentCommits') =>
+  lazyView(() => import('../features/activity/Activity.tsx'), name);
+
+const repoActivityRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/activity',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: activityView('ActivityPulse'),
+});
+
+const repoActivityPeriodRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/activity/$period',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: activityView('ActivityPulse'),
+});
+
+const repoContributorsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/activity/contributors',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: activityView('ActivityContributors'),
+});
+
+const repoCodeFrequencyRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/activity/code-frequency',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: activityView('ActivityCodeFrequency'),
+});
+
+const repoRecentCommitsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/$owner/$repo/activity/recent-commits',
+  loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
+  staticData: {skeleton: 'detail'},
+  component: activityView('ActivityRecentCommits'),
+});
 
 // The UI's own pages inside the shell (no canonical Forgejo URL serves them yet: B8's spaRoutes would need
 // `/{owner}/{repo}/projects/{id}` etc., a backend change; below the base they reload into the app anyway).
@@ -320,6 +364,7 @@ const routeTree = rootRoute.addChildren([
   shellRoute.addChildren([
     baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, ...settingsRoutes, boardsRoute, boardRoute, codeRoute,
+    repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
   ...devRoutes,
@@ -407,4 +452,5 @@ export const ROUTES = {
   myIssues: myIssuesRoute.id,
   myPulls: myPullsRoute.id,
   code: codeRoute.id,
+  repoActivityPeriod: repoActivityPeriodRoute.id,
 } as const;
