@@ -5792,10 +5792,38 @@ below is the permanent part.
     and skipped the spec after it; the file run alone passed 2 / 2 on a fresh instance, 0 `[E]`/`[F]` server log
     lines. The specs whose wording changed were updated beforehand (the palette's placeholder, "1 not sent", the
     named Discard buttons). Not run in this round: MySQL, golangci-lint (as before).
+* **Eighth round: QA round 2 of the seventh round's fixes (`verify2`, 2026-10-11): 52 confirmed findings (7 major,
+  45 minor), filed as GitHub issues, not fixed (user decision).** A fourth hands-on QA re-ran the seventh round's
+  fixes on the rebuilt QA instance (desktop, 800 px and 390 px, offline, stalled network, a 4× slowed CPU). Each
+  finding names its reproduction script and screenshots in the session scratchpad (`qa3/verify2/…`, not in the
+  tree, not uploaded). They are tracked on arihant2math/forgejo, one issue each, titled `[next] …`:
+  * **Major (#21–#27).** ⌘K "sign" preselects Sign out again and Enter signs out (the seventh-round guard does not
+    hold: cmdk selects the first item itself, #21); Ctrl+Z reverts a board move from another page with no notice
+    (#22); at 800 px the page header loses breadcrumb, title and controls, and at 390 px Display and New issue sit in
+    a sideways scroller (#23); the merge box ignores branch protection and shows Forgejo's raw error (#24); markdown
+    tables break words letter by letter (`.prose { overflow-wrap: anywhere }`, #25); a review thread's file link
+    opens Files at the top (#26); an issue created offline cannot be opened from a list (#27).
+  * **Minor (#28–#72).** Palette: organizations, repository tabs, "Up a directory" twice, `?`/`undo`/`g i` (#28–#31).
+    Keyboard and focus: J/K on Home, owner and repository home (#32); Esc and Ctrl+K in the composer (#33); keys after
+    the reaction menu (#35); focus to `<body>` after comment delete, reviews and threads, the phone drawer (#36–#38);
+    board arrows, empty columns, create from a column (#52, #53, #56); create dialog Tab order (#47); the code lists'
+    stray outline (#64). Editing: a comment deleted during an edit loses ~400 ms of typing (#34); lists do not
+    continue on Enter (#51); the conflict editor's setext heading (#71). Addresses and pages: `/ShellQA` case (#39),
+    not-found presentation (#40), offline titles (#41), `issues/new` (#42), one name per action (#43), signed-out
+    offer (#44). Create dialog and pickers: repository picker cursor (#45), a second picker implementation (#46),
+    default repository per device (#48). Lists: header controls shift (#49); due-date presets (#50). Boards: phone
+    menus off screen (#54), the read-only reason (#55). Code and pull requests: cross-file heading anchors (#57),
+    "Merge when checks succeed" primary under changes requested (#58), the author listed as reviewer (#59), image
+    diffs (#60), Blame drops the line range (#61), the tag's commit bar (#62), the commit page heading and Esc (#63).
+    Sidebar: reshuffle after sign-in (#65), the temporary row (#66). Offline and stall: a stale failure notice (#67),
+    two refusal wordings and a Retry for a 404 (#68), 4 s navigations during a stall (#69), Overview skeletons during
+    a stall (#70). Speed: long tasks while typing a search and scrolling a diff at 4× CPU (#72).
+  * **First load** is #73 (below).
 * **Still open.**
-  * **First load** (the fifth round's first major finding): a cold load still fetches 150+ small modules and
+  * **First load** (the fifth round's first major finding, issue #73): a cold load still fetches 150+ small modules and
     renders on the client only. Left to the foundation session (chunk grouping, server-rendered or streamed first
     view), as directed.
+  * The eighth round's 52 findings (#21–#72 above).
   * PLAN-level items this pass did not take on: labels and milestones management views, a go-to-file finder, sticky
     group headers (4.2). (Comment edit markers are shown since the seventh round.)
   * Navigations still take 90–185 ms of a 4× slowed CPU (seventh round, above): with the first-load work.
