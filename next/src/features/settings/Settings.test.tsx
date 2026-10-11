@@ -8,7 +8,7 @@
 
 import {createMemoryHistory} from '@tanstack/react-router';
 import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
-import {afterEach, expect, test, vi} from 'vitest';
+import {afterAll, afterEach, expect, test, vi} from 'vitest';
 import {App} from '../../app/App.tsx';
 import {createAppRouter} from '../../app/router.tsx';
 import {createApp} from '../../app/store.ts';
@@ -21,6 +21,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
 });
+
+// The shell's idle work (whenIdle: a 200 ms timer in jsdom) runs before the environment goes away.
+afterAll(() => new Promise<void>((resolve) => {
+  setTimeout(resolve, 300);
+}));
 
 /** alice owns alice/notes (id 10: administrator from the pool) and reads acme/website (id 20). */
 function session() {
