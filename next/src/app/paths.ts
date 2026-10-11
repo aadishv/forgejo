@@ -86,7 +86,7 @@ export function appPageOf(classic: string): string {
 
 /**
  * The nearest page of the app to a classic page it does not render (the pill on the classic page goes there,
- * never to an unrelated Home): a release's page is the Releases tab, the repository's projects its boards, a new
+ * never to an unrelated Home): a release's page is the releases page, the repository's projects its boards, a new
  * issue its issue list, anything else of a repository (wiki, settings, milestones, …) its home.
  */
 function nearestAppPage(path: string): string | undefined {
