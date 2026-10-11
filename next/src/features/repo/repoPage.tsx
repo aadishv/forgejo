@@ -134,7 +134,7 @@ export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle
   );
 }
 
-type Tab = 'code' | 'issues' | 'pulls' | 'actions' | undefined;
+type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | undefined;
 
 /**
  * The code views that are the Code tab, as GitHub's Code tab stays selected on a repository's files, history,
@@ -154,7 +154,7 @@ export function tabOfPath(path: string): Tab {
   if (segs.length < 2) return undefined;
   const kind = segs[2];
   if (kind === undefined) return 'code';
-  return kind === 'issues' || kind === 'pulls' ? kind : undefined;
+  return kind === 'issues' || kind === 'pulls' || kind === 'activity' ? kind : undefined;
 }
 
 /** One of the repository's tabs: in the bar, and the same entry as a row of "More" when the bar is too narrow. */
@@ -227,7 +227,12 @@ export const RepoTabs = observer(function RepoTabs({owner, repo, repoId}: {owner
     },
     projects,
     classic('wiki', `${base}/wiki`, BookOpen, 'Wiki'),
-    classic('activity', `${base}/activity`, ChartLine, 'Activity'),
+    {
+      key: 'activity',
+      // Every activity page (the Pulse of any period, the graphs) is this tab.
+      tab: <TabLink><Link to="/$owner/$repo/activity" params={{owner, repo}} {...cur('activity')}><Icon icon={ChartLine} size="sm"/>Activity</Link></TabLink>,
+      item: <MenuItem icon={ChartLine} onSelect={() => void navigate({to: '/$owner/$repo/activity', params: {owner, repo}})}>Activity</MenuItem>,
+    },
     ...admin ? [classic('settings', `${base}/settings`, Settings, 'Settings')] : [],
   ];
   return (

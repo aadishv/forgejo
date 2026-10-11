@@ -19,7 +19,9 @@ import {RequestFailed} from '../app/api.ts';
 import {sitePath} from '../app/config.ts';
 import {appWorkerURL} from '../app/trusted.ts';
 import type {App, Session} from '../app/store.ts';
-import {APIPrefix, type APIBlame, type APIMarkupRequest, type APIMarkupResponse, type APITree, type APITreeEntry} from '../protocol/types.gen.ts';
+import {
+  APIPrefix, type APIBlame, type APICommitActivity, type APIContributors, type APIMarkupRequest, type APIMarkupResponse, type APITree, type APITreeEntry,
+} from '../protocol/types.gen.ts';
 import {netSignal} from '../sync/net.ts';
 import type {CodeWorkerApi, Highlight} from '../workers/code.worker.ts';
 import workerUrl from '../workers/code.worker.ts?worker&url';
@@ -66,6 +68,9 @@ export class TooLarge extends RequestFailed {
     super(413, `${what} is too large to show here.`);
   }
 }
+
+/** How many times the contributor statistics are asked while Forgejo computes them (≈ 2 s apart). */
+const CONTRIBUTOR_ATTEMPTS = 90;
 
 /** JSON answers (trees, blames, commit lists, compares) above this are refused: unrelated histories compare to every commit. */
 const MAX_JSON = 16 * 1024 * 1024;
@@ -544,6 +549,40 @@ export class CodeSource {
 
   static renderedKey(repoId: number, commit: string, path: string, ref: {kind: RefKind; name: string}): string {
     return `mdc:${String(repoId)}:${commit}:${ref.kind}:${ref.name}:${path}`;
+  }
+
+  static activityKey(repoId: number, commit: string): string {
+    return `act:${String(repoId)}:${commit}`;
+  }
+
+  /** A year of history from a commit: what the activity page counts (every period from one answer). */
+  commitActivity(repoId: number, commit: string): Promise<APICommitActivity> {
+    return this.cached(CodeSource.activityKey(repoId, commit), async () => {
+      const res = await this.request('sync', `/repos/${String(repoId)}/activity/${commit}`);
+      return await readJson(res) as APICommitActivity;
+    });
+  }
+
+  static contributorsKey(repoId: number, commit: string): string {
+    return `ctb:${String(repoId)}:${commit}`;
+  }
+
+  /**
+   * The contributor statistics at a commit (weekly, the whole history). Forgejo computes them in the background
+   * (202 meanwhile): asked again after the time it says, for a few minutes at most — one request at a time per
+   * commit, however many views wait for it.
+   */
+  contributors(repoId: number, commit: string): Promise<APIContributors> {
+    return this.cached(CodeSource.contributorsKey(repoId, commit), async () => {
+      for (let attempt = 0; ; attempt++) {
+        const res = await this.request('sync', `/repos/${String(repoId)}/contributors/${commit}`);
+        if (res.status !== 202) return await readJson(res) as APIContributors;
+        void res.body?.cancel();
+        if (attempt >= CONTRIBUTOR_ATTEMPTS) throw new RequestFailed(503, 'Forgejo is still computing these statistics. Try again in a minute.');
+        const after = Number(res.headers.get('Retry-After') ?? '2');
+        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.min(10, Math.max(1, Number.isFinite(after) ? after : 2))));
+      }
+    });
   }
 
   // ---- API v1 (immutable when addressed by full SHAs) ----
