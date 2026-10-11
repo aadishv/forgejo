@@ -5050,6 +5050,16 @@ them.
 
 ### 4.2 Frontend
 
+* **Activity (ported 2026-10-11).** `/{owner}/{repo}/activity[/{period}|/contributors|/code-frequency|/recent-commits]`
+  are app routes (`features/activity/`). The Pulse counts from the pool (`pulse.ts`, classic semantics); its commit
+  counts and top committers come from `GET /-/sync/api/repos/{id}/activity/{commit}` (a year of the default
+  branch's history, immutable by SHA, aggregated per period on the client), the graphs from
+  `/contributors/{commit}` (`GetContributorStats`, 202 while computed). Gaps: commit statistics are the default
+  branch's (classic counts top authors over all branches and also says "N commits to all branches"); no "files
+  changed" count (not additive per commit); periods over a month page the closed tier until done (no early stop:
+  the pager does not expose how far it got); a summary recency (`SUMMARY_RECENCY`) below a month would undercount
+  the short periods.
+
 * **Data.**
   * The hot-row confirmation (`HOT_KINDS`: a notification status waits for its effect after the echo) is tested only by
     the e2e inbox sequence; the fake server of the executor's unit tests has no notifications (F8).
