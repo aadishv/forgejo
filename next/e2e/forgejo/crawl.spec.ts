@@ -218,6 +218,9 @@ test.beforeAll(async ({browser}) => {
       {operation: 'create', path: 'docs/guide.md', content: b64('# Guide\n\nSee [the main program](../src/main.go) and #1.\n\n```go\nfunc main() {}\n```\n')},
       {operation: 'create', path: 'docs/logo.svg', content: b64('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" fill="teal"/></svg>\n')},
       {operation: 'create', path: '.forgejo/workflows/ci.yml', content: b64('on: [push, pull_request]\njobs:\n  test:\n    runs-on: crawl-runner\n    steps:\n      - run: echo test\n')},
+      // A very long line: the commit's diff and the file view must scroll it in their own pane, never the page
+      // (QA round 7: a commit page's scroller grew to 3417 px).
+      {operation: 'create', path: 'docs/wide.txt', content: b64(`short\n${'x'.repeat(3000)}\nshort again\n`)},
     ],
   });
   const main = await apiJson<{sha: string}>('GET', `/repos/${USER}/${REPO}/contents/src/main.go`);
@@ -428,6 +431,17 @@ test('the link crawler: every in-app link leads to a page of the app, without er
     `/${USER}/${REPO}/src/branch/main`, `/${USER}/${REPO}/src/branch/main/README.md`, `/${USER}/${REPO}/commits/branch/main`, `/${USER}/${REPO}/branches`,
     `/${USER}/${REPO}/releases`, `/${USER}/${REPO}/actions`, `/${USER}/${REPO}/pulls/1/files`,
   ];
+  // A commit by an abbreviated SHA, as people paste them (QA round 7: the classic page, or "Branch or tag not found"):
+  // the app's page of that commit, under its full SHA.
+  const head = (await apiJson<{commit: {id: string}}>('GET', `/repos/${USER}/${REPO}/branches/main`)).commit.id;
+  for (const path of [`/${USER}/${REPO}/commit/${head.slice(0, 10)}`, `/${USER}/${REPO}/src/commit/${head.slice(0, 10)}/docs/guide.md`]) {
+    await page.goto(new URL(path, BASE).href);
+    await settle(page);
+    visited.push({pattern: `typed:${path.replace(head.slice(0, 10), ':short')}`, url: path, via: `typed ${path}`, depth: 0});
+    const dead = await deadEnd(page);
+    if (dead) failures.push(`"${dead}": typed ${path}`);
+    if (!page.url().includes(head)) failures.push(`typed ${path} did not go on to the full SHA's page: ${page.url()}`);
+  }
   for (const path of typed) {
     await page.goto(new URL(path, BASE).href);
     await settle(page);
@@ -449,7 +463,7 @@ test('the link crawler: every in-app link leads to a page of the app, without er
     const at = new URL(page.url()).pathname;
     if (at !== want) failures.push(`typed ${path} stays at ${at}, not the canonical ${want}`);
   }
-  const missing = [`/-/next/nothing-${RUN}`, `/${USER}/${REPO}/issues/99999`, `/${USER}/${REPO}/issues/new-0f8fad5b-d9cb-469f-a165-70867728950e`, `/${USER}/nothing-${RUN}`];
+  const missing = [`/-/next/nothing-${RUN}`, `/${USER}/${REPO}/issues/99999`, `/${USER}/${REPO}/pulls/99999`, `/${USER}/${REPO}/issues/new-0f8fad5b-d9cb-469f-a165-70867728950e`, `/${USER}/nothing-${RUN}`];
   for (const path of missing) {
     await page.goto(new URL(path, BASE).href);
     await settle(page);
@@ -460,11 +474,13 @@ test('the link crawler: every in-app link leads to a page of the app, without er
     }
     if (await deadEnd(page) !== 'Not found') failures.push(`typed ${path} does not say "Not found": "${await deadEnd(page) ?? ''}"`);
     if (!(await page.title()).startsWith('Not found')) failures.push(`typed ${path}: the tab says "${await page.title()}", not "Not found"`);
+    // A pull request asked for is named one (QA round 7: "Issues › #99999", "This issue does not exist").
+    if (path.includes('/pulls/') && !/pull request/i.test(await page.getByRole('main').innerText())) failures.push(`typed ${path} does not speak of a pull request`);
   }
   const classicPages = [
     `/${USER}/${REPO}/projects`, `/${USER}/${REPO}/pulls/1/files?ui=classic`, `/${USER}/${REPO}/milestones`, `/${USER}/${REPO}/settings`,
     `/${USER}?tab=activity`, '/explore/repos', `/${USER}/${REPO}/issues/2?ui=classic`, `/${USER}/${REPO}/labels`, `/${USER}/${REPO}/activity`,
-    `/${USER}/${REPO}/issues/new`,
+    `/${USER}/${REPO}/issues/new`, `/${USER}/-/projects`, `/${ORG}/-/projects`,
   ];
   // A repository's classic page comes back to that repository (its home, a tab, its boards), never to Home.
   const repoPrefix = [`/${USER}/${REPO}`, `/-/next/code/${USER}/${REPO}/`, '/-/next/boards', '/-/next/projects/'];
@@ -491,6 +507,8 @@ test('the link crawler: every in-app link leads to a page of the app, without er
     if (dead) failures.push(`"${dead}": ${via} → ${new URL(page.url()).pathname}`);
     const landed = new URL(page.url()).pathname;
     if (path.startsWith(`/${USER}/${REPO}/`) && !repoPrefix.some((p) => landed.startsWith(p))) failures.push(`${via} left the repository: ${landed}`);
+    // An owner's projects come back to the boards (QA round 7: Home).
+    if (path.endsWith('/-/projects') && landed !== '/-/next/boards') failures.push(`${via} went to ${landed}, not the boards`);
   }
 
   // Every classic exit (one per route pattern) names a page the classic UI has: "This page classic" on a code

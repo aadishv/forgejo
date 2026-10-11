@@ -5694,12 +5694,111 @@ below is the permanent part.
     `res/pend`, `p1`, `i1`, `w1`, `c1`, `c4`); where a script's own selector or address had gone stale (a sidebar
     repository past the first ten, a code address without `branch/`, the notices' landmark name) the step was
     re-checked by hand. Not run in this round: MySQL; `TestLivesyncAPI`; golangci-lint.
+* **Seventh round: the verify1 findings of the third QA (2026-10-11), all but the first load.** 51 findings (8 major,
+  42 minor, and one answer about the QA harness). Each was fixed at its cause and re-checked by clicking through the
+  rebuilt QA instance with the reporters' `verify1/*` scripts (session scratchpad, `qa3/verify1`; `qa3/r4` for the
+  few steps a script could not reach any more, such as a PR whose files had all been marked viewed).
+  * **The question "might be a harness-level fault?": yes, in part.** The fifth round's "stalled network never
+    recovers" major came from the QA proxy (`r1-resilience/throttle.ts` dropped every request that arrived during a
+    stall, for good; a real stall answers once it ends). With a proxy that releases them the app was Live 268 ms after
+    the stall. Two scripts had drifted (renamed issues, a seeded file that already existed, a runner that took the
+    oldest waiting job). What remained real and is fixed here: the service worker's avatar fetches had no deadline
+    (now 8 s, then the kept copy; `sw/sw.ts AVATAR_MS`). Lazy imports still cannot be given one (the browser fetches
+    modules); they matter only on a network that never answers.
+  * **Major.**
+    * **⌘K: ArrowUp then Enter signed out.** The palette no longer wraps (`CommandRoot loop`, off for the palette
+      only), and a query whose best match is destructive selects nothing ("sign": Enter runs nothing).
+    * **@ and # suggestions stopped narrowing** after the popup opened: `validFor` made CodeMirror reuse the empty
+      query's answer. The source is asked on every keystroke; exact numbers and logins rank first ("#10" is #10).
+    * **Inbox rows named "User N".** `Why` read the actor in a plain component (no observer): the name never came.
+      It is an observer and names no one until the profile is there; `CommentComposer` and `CommentCard` were the same
+      class (the "edited" mark showed only after a reload), and `WaitingEntry` too.
+    * **⌘K "Add a column" lost its name field at 150 ms.** The palette's focus return blurred whatever had the focus;
+      it now lets go only of its opener or its own field (`ui/returnFocus.ts`).
+    * **A reply to a review thread** was its own "reviewed" card with the snippet again. A comment-only review whose
+      code comments all answer other threads is not a card; replies are listed in their thread
+      (`conversationComments`, `startsConversation` in `pull/resolve.tsx`). Threads are in file and line order (the
+      pool's order differed between a load and a reload).
+    * **Sideways scrolling** of a log or a file hid the step headers and the short lines' gutters. `Lines` makes
+      every row as wide as the longest line (`min-w-lines`, `--code-chars`; blame's gutter `lines-blame`), step
+      headers are pinned to the pane's left edge (`w-lines`, `--lines-width`), and the step whose lines are at the top
+      stays pinned above them (`Lines pinned`). The diff has its own sideways pane on commit and compare pages too
+      (the page scroller grew to 3417 px); its floating file header sits outside it.
+    * **New issue in a new tab** started in acme/atlas: the last repository opened and the last one created in are
+      kept per user in localStorage (`app/create.ts rememberOpened`, `CreateIssue lastRepo`), not sessionStorage.
+    * **A picker opened while the last one faded out** (L, Esc, S in 150 ms) got no focus: the picker dialog is keyed
+      by its opening, as the palette is.
+  * **Palette and keyboard.** Board commands that cannot run are listed with the reason (no card under the cursor,
+    the first column, the default column, read-only, offline): a shortcut's `when` may return the reason
+    (`ShortcutRegistry.available()` → `{id, why}`), and keymap entries have aliases ("remove the column"). Rows that
+    cannot run come last in their group and are not the default without a query. "help" names Keyboard shortcuts,
+    "acme atlas" names acme/atlas (owner and name as two words, `repoScore`). The placeholder is "Search or type a
+    command…" (it was cut off at 390 px). Esc on an empty list search gives the keys back to the list. The help lists
+    two keys of one action on one row (⌫ or Alt ↑). ↓ / ↑ / ↵ in a pull request's Files work from the page (registry
+    bindings with `page`), and clicking the Files tab hands the keys to the diff. Opening a directory starts its own
+    cursor; going up puts the cursor on the directory you came from.
+  * **Undo.** ⌘Z undoes a property set from a picker (the inverse of the intents it submitted: `inverseIntents`,
+    `Intents.capture`, `quietUndo`), a card moved up or down its column, and a column moved left or right. A board's
+    move Undo is dropped when a column is deleted (`dismissSeries` forgets the series' undos), and an Undo whose card
+    has moved since says "Nothing to undo" instead of moving it again. Undo of "Mark all read" is one request: a new
+    gap endpoint `PUT /-/sync/api/notifications/status` (ids and a status, one transaction, 404 for another user's;
+    intent `notification.statusMany`; `TestLivesyncAPI/notification_status`).
+  * **Pull requests and code.** Short SHAs in typed addresses (`commit/7af171c9e8`, `src/commit/…`) are served by
+    the app (`spa.go` shaPattern 7–64 digits, `sw/routes.ts`, `nextPathOf`) and resolved to the full SHA's address
+    (`abbreviatedSha`, `ExpandSha`). Fast-forward only is disabled with the reason when the branch is behind (API v1
+    answers that merge with 500: an upstream switch we may not patch; the app words it as a refusal without Retry).
+    A dismissed approval is neutral; the merge box says "Changes requested by …" and Merge is not primary
+    (`pullVerdict`, shared with the rows). Narrow rows show the verdict as an icon (`UserX` / `UserCheck`). The
+    diff's "+" sits in the +/− slot, which is as wide as it (`--thread-indent` follows). A cancelled job that never
+    ran says so. A run followed live keeps following to its end.
+  * **Issues.** Dependency events read "marked this as blocked by #5" / "… blocking #3" on each side, also once
+    removed: the server says the side (`Comment.dependency_role`, `SchemaComment` 2; Forgejo writes the blocked
+    issue's event first, `materialize.loadDependencyRoles`). Group by status has "No status" first. The filter picker
+    opens at the top (`fromTop`), and every menu row's leading slot has one width (`ItemBody`). Saving a view makes
+    it the list's view (`ViewStore.save` → `open`). No "End of this week" on a Friday or a weekend. Popovers and menus
+    keep 8 px from the viewport's edge (`EDGE_GAP`). Reaction chips have a tooltip naming who reacted. Ticking a task
+    offline keeps the rendered description with its boxes (`onlyTicks`). Enter or Esc in the title field gives the
+    focus back to the title. The phone summary has no empty priority slot and "All properties" is a text link.
+  * **Shell.** A repository renamed while open follows in the address, breadcrumb and tab title. `/pulls/N` that
+    nobody has says "This pull request" under Pull requests. The pill on `/{owner}/-/projects` goes to Boards. "N
+    more" has "Show fewer", and both are remembered; the focus moves to the control that replaces the one clicked,
+    as it does for the sidebar's Hide / Show buttons. A fork names its parent under its name (from Forgejo when not
+    on the device). The signed-out screen's tab is "Sign in · <instance>".
+  * **Inbox.** Rows under "Pinned" and "Other" keep their repository (`InboxRow.inHeader`).
+  * **Offline and connection.** Refused changes are "N not sent" (warning) next to Live, apart from "N pending".
+    A queued change to an issue deleted meanwhile fails at once with the reason (`issueDropped` for any deleted
+    issue, not only one whose page is open). Code views say "Can’t reach Forgejo" during a stall and load again when
+    Forgejo answers (`useLoad` reacts to the connection, not only to the browser's online flag). Each Discard and
+    Retry in the Unsynced panel names its change.
+  * **Speed on a 4× slowed CPU** (`verify1/resilience/jank.ts`, longest task): a README's highlighted blocks are
+    painted one per idle period (they were one 25 ms block of a repository page's task). Measured after: sidebar
+    atlas 112 → 94 ms, atlas Issues 199 → 136 ms, open a board 171 → 124 ms; sidebar Inbox (173–185 ms), My issues
+    (118–135 ms) and opening an issue (142–148 ms) are unchanged: most of it is React rendering the new page's rows
+    (`vendor-react-dom` 50–70 ms self time of 4× CPU). At 1× nothing over 50 ms was seen (the fifth round's 66 ms
+    did not reproduce). Lowering these further belongs with the foundation work on the first load (fewer
+    components per row, a server-rendered first view).
+  * **Crawler extended.** Its seed has a file with a 3000-character line (the commit's diff and the file view must
+    not widen the page: the existing sideways invariant now sees them). It types a commit address and a `src/commit`
+    address by an abbreviated SHA (they must go on to the full SHA's page), `/pulls/99999` (it must speak of a pull
+    request), and takes the pill on `/{owner}/-/projects` of dev and of its organization (it must land on Boards).
+  * **Checks (seventh round).** `npm run check` **pass** (ESLint, Stylelint, typecheck, **490 Vitest tests in 55
+    files**, build, budget: boot JS 159.4 / 500 KiB br, CSS 7.6 / 30 KiB). `gen-protocol.sh` regenerated (the new
+    gap endpoint's body, `dependency_role`). `go test ./routers/livesync/ ./services/livesync/materialize/
+    ./services/livesync/protocol/`, go vet and gofumpt clean; `TestLivesyncAPI` (with the new `notification status`
+    subtest) **passes on PostgreSQL**. The deadcode check has no new entries and the upstream footprint is unchanged.
+    `tools/ci.sh crawl e2e` on PostgreSQL: crawler **pass** (132 pages, 124 route patterns, 1299 links, the new
+    checks included); e2e **42 passed, 1 failed, 1 not run**: `rum.spec` missed its `firstPaintFromCache` mark (the
+    page navigated before the workspace of the sign-in was stored: it is marked only for a boot from stored data)
+    and skipped the spec after it; the file run alone passed 2 / 2 on a fresh instance, 0 `[E]`/`[F]` server log
+    lines. The specs whose wording changed were updated beforehand (the palette's placeholder, "1 not sent", the
+    named Discard buttons). Not run in this round: MySQL, golangci-lint (as before).
 * **Still open.**
   * **First load** (the fifth round's first major finding): a cold load still fetches 150+ small modules and
     renders on the client only. Left to the foundation session (chunk grouping, server-rendered or streamed first
     view), as directed.
-  * PLAN-level items this pass did not take on: labels and milestones management views, comment edit markers, a
-    go-to-file finder, sticky group headers (4.2).
+  * PLAN-level items this pass did not take on: labels and milestones management views, a go-to-file finder, sticky
+    group headers (4.2). (Comment edit markers are shown since the seventh round.)
+  * Navigations still take 90–185 ms of a 4× slowed CPU (seventh round, above): with the first-load work.
   * The crawler covers what dev reaches; a read-only user's (carol's) walk, a narrow viewport and offline
     navigation are not crawled. Pages it does not reach by a link of its own seed (compare, blame of a tag) are covered by the
     code e2e spec.
