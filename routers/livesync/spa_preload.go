@@ -43,8 +43,23 @@ func routeModules(p string) []string {
 		}
 		return nil
 	}
+	if segs[0] == "user" {
+		// The viewer's settings pages (spaRoutes); every other /user/… page is classic.
+		if spaRoute(p) {
+			return []string{"src/features/usersettings/UserSettings.tsx"}
+		}
+		return nil
+	}
 	if len(segs) >= 3 && segs[2] == "wiki" {
 		return []string{"src/features/wiki/WikiPage.tsx"}
+	}
+	// A canonical code address (/{owner}/{repo}/releases/new, src/…): the app
+	// goes on to its code view, or to a pull request's tab.
+	if len(segs) >= 3 && codeAddress(segs[2:]) {
+		if segs[2] == "pulls" {
+			return []string{"src/features/issue/IssueView.tsx"}
+		}
+		return []string{"src/features/code/CodePage.tsx"}
 	}
 	if len(segs) >= 3 && segs[2] == "activity" {
 		return []string{"src/features/activity/Activity.tsx"}
@@ -59,6 +74,12 @@ func routeModules(p string) []string {
 		}
 		return []string{"src/features/owner/OwnerPage.tsx"}
 	case 2:
+		switch {
+		case segs[0] == "repo" && segs[1] == "create":
+			return []string{"src/features/new/NewRepo.tsx"}
+		case segs[0] == "org" && segs[1] == "create":
+			return []string{"src/features/new/NewOrg.tsx"}
+		}
 		return []string{"src/features/repo/RepoHome.tsx"}
 	case 3:
 		switch segs[2] {

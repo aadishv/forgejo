@@ -25,6 +25,7 @@ import (
 
 	repo_model "forgejo.org/models/repo"
 	user_model "forgejo.org/models/user"
+	"forgejo.org/modules/git"
 	"forgejo.org/modules/json"
 	"forgejo.org/modules/log"
 	"forgejo.org/modules/setting"
@@ -58,6 +59,8 @@ var spaRoutes = [][]string{
 	{"notifications"},     // the inbox
 	{"issues"},            // the viewer's issues
 	{"pulls"},             // the viewer's pull requests
+	{"repo", "create"},    // a new repository ("repo" and "org" are reserved user names: never an owner)
+	{"org", "create"},     // a new organization
 	{"{owner}"},           // an owner's repositories (the profile's other tabs stay classic: profileTab)
 	{"{owner}", "{repo}"}, // a repository's home
 	{"{owner}", "{repo}", "issues"},
@@ -89,6 +92,13 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "wiki", "-", "pages"},
 	{"{owner}", "{repo}", "wiki", "-", "new"},
 	{"{owner}", "{repo}", "wiki", "{page}", "-", "edit"},
+	// The viewer's settings: the profile, account (email addresses),
+	// appearance and SSH / GPG keys pages; the other pages stay classic.
+	// "user" is a reserved name ({owner} never matches it).
+	{"user", "settings"},
+	{"user", "settings", "account"},
+	{"user", "settings", "appearance"},
+	{"user", "settings", "keys"},
 }
 
 // activityPeriods are the periods of the classic activity page
@@ -137,8 +147,13 @@ func codeAddress(rest []string) bool {
 		return false
 	case "commit":
 		return len(rest) == 2 && shaPattern.MatchString(rest[1])
-	case "branches", "tags", "releases":
+	case "branches", "tags":
 		return len(rest) == 1
+	case "releases":
+		// The list, and a writer's release form: a new release, a tag's release
+		// (whose name may have slashes) to edit. A release's own page
+		// (releases/tag/…) stays classic.
+		return len(rest) == 1 || len(rest) == 2 && rest[1] == "new" || len(rest) >= 3 && rest[1] == "edit"
 	case "actions":
 		switch {
 		case len(rest) == 1:
@@ -247,6 +262,28 @@ next:
 // routes, which would otherwise serve the UI again. The opt-in stays.
 func classicRequested(req *http.Request) bool {
 	return req.URL.Query().Get(protocol.NextUICookie) == "classic"
+}
+
+// classicReturn reports whether req comes back to the classic page it was
+// sent from: the classic page of a canonical route (?ui=classic) whose form
+// posted to its own address and was redirected there (the classic settings
+// pages: a password changed on /user/settings/account?ui=classic comes back
+// to /user/settings/account, where the classic page shows that it was
+// done). Without it the UI would answer, and the classic page's message
+// would be lost.
+func classicReturn(req *http.Request) bool {
+	ref := req.Header.Get("Referer")
+	if ref == "" {
+		return false
+	}
+	u, err := url.Parse(ref)
+	if err != nil || u.Query().Get(protocol.NextUICookie) != "classic" {
+		return false
+	}
+	if u.Host != "" && u.Host != req.Host {
+		return false
+	}
+	return normalizeSlashes(u.Path) == normalizeSlashes(req.URL.Path)
 }
 
 // profileTab reports whether req asks for a tab of an owner's classic
@@ -654,6 +691,10 @@ func nextConfig() *protocol.NextConfig {
 		AppURL: setting.AppURL, AppSubURL: setting.AppSubURL, Base: setting.AppSubURL + nextBase,
 		AppName: setting.AppName, Version: setting.AppVer, Protocol: protocol.ProtocolVersion,
 		SSHClonePrefix: sshClonePrefix(),
+		Repository: &protocol.NextRepository{
+			DefaultBranch: setting.Repository.DefaultBranch, DefaultPrivate: setting.Repository.DefaultPrivate,
+			ForcePrivate: setting.Repository.ForcePrivate, ObjectFormats: objectFormats(),
+		},
 	}
 	if app := livesync_service.OAuthApp(); app != nil {
 		cfg.OAuth = &protocol.NextOAuth{
@@ -663,6 +704,16 @@ func nextConfig() *protocol.NextConfig {
 		}
 	}
 	return cfg
+}
+
+// objectFormats are the names of the object formats new repositories may
+// use (git.SupportedObjectFormats: SHA-1 first, SHA-256 with a Git that has it).
+func objectFormats() []string {
+	names := make([]string, 0, len(git.SupportedObjectFormats))
+	for _, f := range git.SupportedObjectFormats {
+		names = append(names, f.Name())
+	}
+	return names
 }
 
 // sshClonePrefix is the part of every SSH clone URL before "{owner}/{repo}.git"
@@ -823,7 +874,7 @@ func (s *spa) serveIndex(w http.ResponseWriter, req *http.Request, canonical boo
 // canonical route the UI supports (and there is a build): it gets the UI's
 // document instead of the classic page.
 func (s *spa) document(req *http.Request) bool {
-	if !optedIn(req) || !s.available() || classicRequested(req) {
+	if !optedIn(req) || !s.available() || classicRequested(req) || classicReturn(req) {
 		return false
 	}
 	p := normalizeSlashes(req.URL.Path)

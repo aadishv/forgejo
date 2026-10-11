@@ -12,6 +12,9 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/pulls/9/files')).toBe('/acme/atlas/pulls/9?tab=files');
   expect(nextPathOf('/acme/atlas/src/branch/main/docs/a b.md')).toBe('/-/next/code/acme/atlas/src/branch/main/docs/a%20b.md/-');
   expect(nextPathOf('/acme/atlas/commit/' + 'a'.repeat(40))).toBe(`/-/next/code/acme/atlas/commit/${'a'.repeat(40)}/-`);
+  expect(nextPathOf('/acme/atlas/releases/new')).toBe('/-/next/code/acme/atlas/releases/new/-');
+  expect(nextPathOf('/acme/atlas/releases/edit/release/1.0')).toBe('/-/next/code/acme/atlas/releases/edit/release/1.0/-');
+  expect(classicPathOf('/-/next/code/acme/atlas/releases/edit/v1.2/-')).toBe('/acme/atlas/releases/edit/v1.2');
   expect(nextPathOf('/acme/atlas/actions/runs/3')).toBe('/-/next/code/acme/atlas/actions/runs/3/-');
   expect(nextPathOf('/acme/atlas/projects/1')).toBe('/-/next/projects/1');
   expect(nextPathOf('/acme/-/projects/3')).toBe('/-/next/projects/3');
@@ -28,6 +31,11 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/compare/feature')).toBe('/-/next/code/acme/atlas/compare/feature/-');
   expect(nextPathOf('/acme/atlas/compare')).toBe('/-/next/code/acme/atlas/compare/-');
   expect(nextPathOf('/acme/atlas/compare/main..feature')).toBeUndefined();
+  // The new repository and organization forms ("repo" and "org" are reserved names: no owner); a migration stays classic.
+  expect(nextPathOf('/repo/create')).toBe('/repo/create');
+  expect(nextPathOf('/org/create')).toBe('/org/create');
+  expect(appPageOf('/repo/create?org=3')).toBe('/repo/create?org=3');
+  expect(appPageOf('/org/create?x=1')).toBe('/org/create');
   // Labels and milestones.
   expect(nextPathOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
   expect(nextPathOf('/acme/atlas/milestones')).toBe('/acme/atlas/milestones');
@@ -40,7 +48,13 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/acme/atlas/settings')).toBe('/acme/atlas/settings');
   expect(nextPathOf('/acme/atlas/settings/hooks')).toBe('/acme/atlas/settings/hooks');
   expect(nextPathOf('/acme/atlas/settings/collaboration')).toBe('/acme/atlas/settings/collaboration');
-  for (const p of ['/explore', '/user/settings', '/acme/atlas/settings/units', '/acme/atlas/settings/hooks/3', '/acme/atlas/settings/hooks/git', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
+  // The viewer's settings: the app's pages, the others classic.
+  expect(nextPathOf('/user/settings')).toBe('/user/settings');
+  expect(nextPathOf('/user/settings/')).toBe('/user/settings');
+  expect(nextPathOf('/user/settings/keys')).toBe('/user/settings/keys');
+  expect(nextPathOf('/user/settings/account')).toBe('/user/settings/account');
+  for (const p of ['/user/settings/applications', '/user/settings/keys/x', '/user/login', '/user']) expect(nextPathOf(p), p).toBeUndefined();
+  for (const p of ['/explore', '/repo/migrate', '/org/acme/teams', '/repo/create/x', '/acme/atlas/settings/units', '/acme/atlas/settings/hooks/3', '/acme/atlas/settings/hooks/git', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
   }
 });
@@ -65,7 +79,7 @@ test('the app\'s pages → classic pages', () => {
 });
 
 test('canonical routes and the repository of a route', () => {
-  for (const p of ['/', '/issues', '/acme', '/acme/atlas', '/acme/atlas/pulls/3', '/acme/atlas/wiki', '/acme/atlas/wiki/Home', '/acme/atlas/wiki/-/pages']) expect(isCanonical(p), p).toBe(true);
+  for (const p of ['/', '/issues', '/acme', '/acme/atlas', '/acme/atlas/pulls/3', '/acme/atlas/wiki', '/acme/atlas/wiki/Home', '/acme/atlas/wiki/-/pages', '/user/settings', '/user/settings/keys']) expect(isCanonical(p), p).toBe(true);
   for (const p of ['/acme/atlas/settings', '/acme/atlas/settings/branches', '/acme/atlas/settings/keys']) expect(isCanonical(p), p).toBe(true);
   expect(isCanonical('/acme/atlas/wiki/Home', '?action=_revision')).toBe(false);
   expect(repoOfPath('/acme/atlas/wiki/Home')).toBe('acme/atlas');
@@ -103,7 +117,11 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme?tab=activity')).toBe('/acme');
   expect(appPageOf('/acme/atlas/issues?state=closed&labels=3')).toBe('/acme/atlas/issues?state=closed&labels=3');
   expect(appPageOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
-  for (const p of ['/explore/repos', '/user/settings', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
+  for (const p of ['/explore/repos', '/user/login', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
+  // The settings: the app's page, or its settings for a page it has not.
+  expect(appPageOf('/user/settings/appearance')).toBe('/user/settings/appearance');
+  expect(appPageOf('/user/settings/applications')).toBe('/user/settings');
+  expect(appPageOf('/user/settings/security?x=1')).toBe('/user/settings');
   // A repository's classic-only pages: the nearest page of the app, never Home.
   for (const p of ['/acme/atlas/activity_author_data', '/acme/atlas/stars']) {
     expect(appPageOf(p), p).toBe('/acme/atlas');

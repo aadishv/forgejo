@@ -128,6 +128,13 @@ func TestSPARoute(t *testing.T) {
 		"/explore":                                                     false,
 		"/user2.keys":                                                  false, // the user's files (reservedUserPatterns)
 		"/user2.rss":                                                   false,
+		// The new repository and organization forms ("repo" and "org" are reserved: never an owner).
+		"/repo/create":   true,
+		"/org/create":    true,
+		"/repo/migrate":  false, // stays classic
+		"/repo/create/x": false,
+		"/org/org3":      false,
+		"/user2/create":  true, // a repository named "create"
 		// Code addresses open the app's code views (codeAddress).
 		"/user2/repo1/src/branch/master/README.md":                     true,
 		"/user2/repo1/src":                                             true,
@@ -139,6 +146,13 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/branches/x":                                      false,
 		"/user2/repo1/releases":                                        true,
 		"/user2/repo1/releases/tag/v1":                                 false,
+		"/user2/repo1/releases/new":                                    true,
+		"/user2/repo1/releases/new/x":                                  false,
+		"/user2/repo1/releases/edit/v1.0":                              true,
+		"/user2/repo1/releases/edit/release/1.0":                       true, // a tag with slashes
+		"/user2/repo1/releases/edit":                                   false,
+		"/user2/repo1/releases/edit/../../settings":                    false,
+		"/user2/repo1/releases/latest":                                 false,
 		"/user2/repo1/actions":                                         true,
 		"/user2/repo1/actions/runs/3":                                  true,
 		"/user2/repo1/actions/runs/3/jobs/0/attempt/1":                 true,
@@ -195,6 +209,18 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/activity/contributors/data": false, // the classic graphs' JSON
 		"/user2/repo1/activity/weekly/x":          false,
 		"/user2/repo1/activity_author_data":       false,
+		// The viewer's settings: four pages; the rest stay classic.
+		"/user/settings":              true,
+		"/user/settings/":             true,
+		"/user/settings/account":      true,
+		"/user/settings/appearance":   true,
+		"/user/settings/keys":         true,
+		"/user/settings/applications": false,
+		"/user/settings/security":     false,
+		"/user/settings/keys/x":       false,
+		"/user/login":                 false,
+		"/user":                       false,
+		"/user2/settings":             true, // a repository named "settings" of user2
 	} {
 		assert.Equal(t, want, spaRoute(p), p)
 	}
@@ -312,8 +338,17 @@ func TestSPAServing(t *testing.T) {
 			for _, p := range []string{"/user2/repo1/wiki", "/user2/repo1/wiki/?action=_pages", "/user2/repo1/wiki/Home?action=_edit", "/user2/repo1/wiki/-/pages"} {
 				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
 			}
+			for _, p := range []string{"/user/settings", "/user/settings/keys", "/user/settings/account"} {
+				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
+			}
+			// A classic page's form posted to its own address comes back to the classic page (its message).
+			back := append([]string{"Referer", "https://example.com" + sub + "/user/settings/account?ui=classic"}, opted...)
+			assert.Equal(t, 299, get(t, h, sub+"/user/settings/account", back...).Code, "back to the classic page")
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user/settings/keys", back...).Code, "another page")
+			other := append([]string{"Referer", "https://example.com" + sub + "/user/settings/account"}, opted...)
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user/settings/account", other...).Code, "from the app's page")
 			// A wiki page's revisions are the classic page's.
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings/units", "/user2/repo1/settings?ui=classic", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision"} {
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings/units", "/user2/repo1/settings?ui=classic", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision", "/user/settings/applications", "/user/settings?ui=classic"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)
@@ -354,6 +389,10 @@ func checkDocument(t *testing.T, rec *httptest.ResponseRecorder, sub string) {
 	assert.Equal(t, sub, cfg.AppSubURL)
 	assert.Equal(t, sub+"/-/next/", cfg.Base)
 	assert.Equal(t, protocol.ProtocolVersion, cfg.Protocol)
+	if assert.NotNil(t, cfg.Repository, "the new repository defaults") {
+		assert.Equal(t, setting.Repository.DefaultBranch, cfg.Repository.DefaultBranch)
+		assert.Equal(t, "sha1", cfg.Repository.ObjectFormats[0], "SHA-1 is the default")
+	}
 	boot := strings.ReplaceAll(bootScript, "`/-/next/`", "`"+sub+"/-/next/`")
 	assert.Contains(t, body, "<script>"+boot+"</script>")
 	sum := sha256.Sum256([]byte(boot))

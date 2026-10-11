@@ -5060,6 +5060,18 @@ them.
   the pager does not expose how far it got); a summary recency (`SUMMARY_RECENCY`) below a month would undercount
   the short periods.
 
+* **Branch, tag and release writes (ported 2026-10-11).** Writers create a branch (from a branch, tag or typed
+  commit SHA) and delete one (never the default branch; protection asked of API v1's `GET /branches/{name}` when
+  the dialog opens, as rules are not synced), create a tag (a message makes it annotated) and delete a tag without a
+  release, and make, edit, publish, set back to draft and delete releases (`features/code/RefDialogs.tsx`,
+  `ReleaseForm.tsx`, `refOps.ts`, pure rules in `refWrite.ts`). The forms are code views (`releases/new`,
+  `releases/edit/{tag}`: spa.go `codeAddress`). Each write waits (5 s at most) for the echoed sync id and then for the
+  pool to show the entity. Drafts (no sync group) come from `GET /releases?draft=true`, kept in the code cache
+  (`drafts:{repo}`). Gaps: restoring a deleted branch stays classic (no API); assets upload one by one after the
+  release is saved, without an Idempotency-Key (B7 buffers 16 MiB at most); API v1 cannot clear a release's notes
+  (an empty body is "unchanged"), so cleared notes are sent as one space; a branch's protection is not shown before
+  its delete dialog opens; the 50 newest drafts only; no shortcut or ⌘K command for these actions yet.
+
 * **Data.**
   * The hot-row confirmation (`HOT_KINDS`: a notification status waits for its effect after the echo) is tested only by
     the e2e inbox sequence; the fake server of the executor's unit tests has no notifications (F8).

@@ -1873,6 +1873,37 @@ export interface NextConfig {
    * (Forgejo's OAuth2 provider is disabled).
    */
   oauth: NextOAuth | null;
+  /**
+   * Repository is what a new repository starts from ([repository]
+   * settings and the Git in use); absent from older servers.
+   */
+  repository?: NextRepository;
+}
+/**
+ * NextRepository is the instance's defaults for a new repository (the
+ * UI's "New repository" form, as the classic /repo/create page has them).
+ */
+export interface NextRepository {
+  /**
+   * DefaultBranch is the branch an initialized repository starts with
+   * ([repository] DEFAULT_BRANCH).
+   */
+  default_branch: string;
+  /**
+   * DefaultPrivate is "last" (the visibility of the user's last new
+   * repository), "private" or "public" ([repository] DEFAULT_PRIVATE).
+   */
+  default_private: string;
+  /**
+   * ForcePrivate: every new repository is private ([repository]
+   * FORCE_PRIVATE).
+   */
+  force_private: boolean;
+  /**
+   * ObjectFormats are the object formats a new repository may use, the
+   * default first: "sha1", and "sha256" when the Git in use supports it.
+   */
+  object_formats: string[];
 }
 /**
  * NextOAuth describes the Next UI's OAuth2 client (a public client: PKCE
@@ -2216,6 +2247,40 @@ export interface Grant {
 export interface Grants {
   viewer_id: number /* int64 */;
   grants: Grant[];
+}
+
+//////////
+// source: user.go
+
+/**
+ * APIUserOptions are the choices of the appearance settings: the
+ * instance's themes ([ui] THEMES, in that order) and languages ([i18n]
+ * LANGS, by name), as the classic appearance page offers them. API v1's
+ * PATCH /user/settings stores any theme and language it is sent, so a
+ * client offers only these. Names are in the viewer's language.
+ * DefaultTheme is [ui] DEFAULT_THEME (an account without a theme of its
+ * own shows it).
+ */
+export interface APIUserOptions {
+  themes: APIOption[];
+  default_theme: string;
+  languages: APIOption[];
+}
+/**
+ * APIOption is a choice: the value stored (ID) and its display name.
+ */
+export interface APIOption {
+  id: string;
+  name: string;
+}
+/**
+ * APIPrimaryEmail is the body of PUT /user/emails/primary: one of the
+ * viewer's verified addresses (case-insensitive) becomes the account's
+ * primary address, as the classic account page's "Set as primary" does
+ * (Forgejo mails the former primary address about the change).
+ */
+export interface APIPrimaryEmail {
+  email: string;
 }
 
 //////////

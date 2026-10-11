@@ -123,6 +123,27 @@ const inboxRoute = createRoute({
   component: lazyView(() => import('../features/inbox/Inbox.tsx')),
 });
 
+// A new repository and a new organization. "repo" and "org" are names Forgejo reserves (no owner has them),
+// and a static path outranks `/$owner/$repo`. `?org=` (an organization's id) and `?template_id=` are the
+// classic page's.
+const newRepoRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/repo/create',
+  validateSearch: (s): {org?: string; template_id?: string} => ({
+    ...(typeof s.org === 'string' && /^[1-9]\d{0,15}$/.test(s.org) ? {org: s.org} : {}),
+    ...(typeof s.template_id === 'string' && /^[1-9]\d{0,15}$/.test(s.template_id) ? {template_id: s.template_id} : {}),
+  }),
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/new/NewRepo.tsx'), 'NewRepo'),
+});
+
+const newOrgRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/org/create',
+  staticData: {skeleton: 'detail'},
+  component: lazyView(() => import('../features/new/NewOrg.tsx'), 'NewOrg'),
+});
+
 // Repository routes resolve the repository (pool, else API v1) and hydrate
 // its group. `$index` stays a string in the URL; views parse it.
 
@@ -337,6 +358,61 @@ const repoRecentCommitsRoute = createRoute({
   component: activityView('ActivityRecentCommits'),
 });
 
+// The viewer's settings (the classic /user/settings pages, laid out like GitHub's: a side list of its pages beside
+// the page): the profile, the account's email addresses, the appearance, SSH and GPG keys; the side list links the
+// other pages to the classic UI. "user" is a name Forgejo reserves, so these never read as an owner and a
+// repository. The loader starts fetching what the page shows, so a hovered link has it in memory when clicked.
+type SettingsKind = 'settings' | 'emails' | 'keys' | 'gpg' | 'options';
+
+function settingsLoader(app: App, kinds: SettingsKind[]): void {
+  void import('../features/usersettings/data.ts').then((m) => {
+    m.settingsSource(app)?.prefetch(...kinds);
+  }, () => undefined);
+}
+
+const settingsView = (name: 'SettingsProfile' | 'SettingsAccount' | 'SettingsAppearance' | 'SettingsKeys') =>
+  lazyView(() => import('../features/usersettings/UserSettings.tsx'), name);
+
+const settingsProfileRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsProfile'),
+});
+
+const settingsAccountRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/account',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['emails']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAccount'),
+});
+
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/appearance',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['settings', 'options']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsAppearance'),
+});
+
+const settingsKeysRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: '/user/settings/keys',
+  loader: ({context: {app}}) => {
+    settingsLoader(app, ['keys', 'gpg']);
+  },
+  staticData: {skeleton: 'detail'},
+  component: settingsView('SettingsKeys'),
+});
+
 // A repository's labels and milestones (features/meta): computed from the pool, written online.
 const repoLabelsRoute = createRoute({
   getParentRoute: () => shellRoute,
@@ -487,10 +563,11 @@ const devRoutes = import.meta.env.DEV ?
 const routeTree = rootRoute.addChildren([
   callbackRoute,
   shellRoute.addChildren([
-    baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute,
+    baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute, newRepoRoute, newOrgRoute,
     repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, ...settingsRoutes, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,
+    settingsProfileRoute, settingsAccountRoute, settingsAppearanceRoute, settingsKeysRoute,
     repoLabelsRoute, repoMilestonesRoute, repoMilestoneNewRoute, repoMilestoneRoute, repoMilestoneEditRoute,
     ownerRoute, nextOwnerRoute, nextRepoRoute, notFoundRoute,
   ]),
