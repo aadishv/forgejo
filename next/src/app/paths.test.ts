@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {expect, test} from 'vitest';
-import {appPageOf, classicOfLocation, classicPathOf, isCanonical, nextPathOf, repoOfPath} from './paths.ts';
+import {appPageOf, classicOfLocation, classicPathOf, isCanonical, isListPath, nextPathOf, repoOfPath} from './paths.ts';
 
 test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/')).toBe('/');
@@ -33,6 +33,13 @@ test('classic links → the app\'s pages', () => {
   expect(nextPathOf('/org/create')).toBe('/org/create');
   expect(appPageOf('/repo/create?org=3')).toBe('/repo/create?org=3');
   expect(appPageOf('/org/create?x=1')).toBe('/org/create');
+  // Labels and milestones.
+  expect(nextPathOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
+  expect(nextPathOf('/acme/atlas/milestones')).toBe('/acme/atlas/milestones');
+  expect(nextPathOf('/acme/atlas/milestones/new')).toBe('/acme/atlas/milestones/new');
+  expect(nextPathOf('/acme/atlas/milestone/7')).toBe('/acme/atlas/milestone/7');
+  expect(nextPathOf('/acme/atlas/milestone/7/edit')).toBe('/acme/atlas/milestone/7/edit');
+  for (const p of ['/acme/atlas/labels/x', '/acme/atlas/milestone/0', '/acme/atlas/milestone/7/close', '/acme/atlas/milestones/7']) expect(nextPathOf(p), p).toBeUndefined();
   // Forgejo's own pages and what the app does not render stay classic.
   for (const p of ['/repo/migrate', '/org/acme/teams', '/repo/create/x', '/explore', '/user/settings', '/acme/atlas/settings', '/acme/atlas/wiki/raw/logo.png', '/acme/atlas/wiki/search', '/acme/atlas/wiki/a%2Fb', '/acme/atlas/issues/new', '/api/v1/repos', '/acme/atlas/src/x%2f..', '/-/next/']) {
     expect(nextPathOf(p), p).toBeUndefined();
@@ -68,6 +75,10 @@ test('canonical routes and the repository of a route', () => {
   expect(repoOfPath('/acme/Atlas/issues/3')).toBe('acme/atlas');
   expect(repoOfPath('/-/next/code/acme/atlas/src/-')).toBe('acme/atlas');
   expect(repoOfPath('/acme/atlas/activity/monthly')).toBe('acme/atlas');
+  expect(repoOfPath('/acme/atlas/milestone/2')).toBe('acme/atlas');
+  expect(repoOfPath('/acme/atlas/labels')).toBe('acme/atlas');
+  expect(isListPath('/acme/atlas/milestone/2')).toBe(true);
+  expect(isListPath('/acme/atlas/milestones')).toBe(false);
   expect(repoOfPath('/notifications')).toBeUndefined();
   expect(repoOfPath('/user/settings')).toBeUndefined();
 });
@@ -93,7 +104,7 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
   for (const p of ['/explore/repos', '/user/settings', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
   // A repository's classic-only pages: the nearest page of the app, never Home.
-  for (const p of ['/acme/atlas/settings', '/acme/atlas/milestones', '/acme/atlas/activity_author_data', '/acme/atlas/stars', '/acme/atlas/labels']) {
+  for (const p of ['/acme/atlas/settings', '/acme/atlas/activity_author_data', '/acme/atlas/stars']) {
     expect(appPageOf(p), p).toBe('/acme/atlas');
   }
   // The wiki: its page; the classic wiki's ?action= views; what the app has not, the wiki's Home.
@@ -103,6 +114,15 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/wiki/Home?action=_edit')).toBe('/acme/atlas/wiki/Home/-/edit');
   expect(appPageOf('/acme/atlas/wiki/Home?action=_revision')).toBe('/acme/atlas/wiki/Home');
   expect(appPageOf('/acme/atlas/wiki/raw/logo.png')).toBe('/acme/atlas/wiki');
+  // Labels and milestones are the app's pages; their other classic addresses the nearest one.
+  expect(appPageOf('/acme/atlas/labels')).toBe('/acme/atlas/labels');
+  expect(appPageOf('/acme/atlas/milestones?state=closed')).toBe('/acme/atlas/milestones?state=closed');
+  expect(appPageOf('/acme/atlas/milestones/new?x=1')).toBe('/acme/atlas/milestones/new');
+  expect(appPageOf('/acme/atlas/milestone/4?state=closed')).toBe('/acme/atlas/milestone/4?state=closed');
+  expect(appPageOf('/acme/atlas/milestone/4/edit')).toBe('/acme/atlas/milestone/4/edit');
+  expect(appPageOf('/acme/atlas/milestones/new')).toBe('/acme/atlas/milestones/new');
+  expect(appPageOf('/acme/atlas/milestone/4/close')).toBe('/acme/atlas/milestones');
+  expect(appPageOf('/acme/atlas/labels/edit')).toBe('/acme/atlas/labels');
   expect(appPageOf('/acme/atlas/releases/tag/v0.2.0')).toBe('/-/next/code/acme/atlas/releases/-');
   expect(appPageOf('/acme/atlas/projects')).toBe('/-/next/boards');
   // The activity pages are the app's.
