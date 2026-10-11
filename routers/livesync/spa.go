@@ -49,8 +49,9 @@ import (
 // Segments: a literal, "{owner}" (a usable user or organization name),
 // "{repo}" (a usable repository name), "{index}" (a number) or "{temp}" (the
 // address "new-<uuid>" the UI gives an issue created offline until Forgejo
-// numbers it: opened later, the UI goes on to the issue it became), "{page}"
-// (a wiki page's address: any segment but wikiReserved) or "{code}". Extend
+// numbers it: opened later, the UI goes on to the issue it became), "{period}"
+// (a period of the activity page: activityPeriods), "{page}" (a wiki page's
+// address: any segment but wikiReserved) or "{code}". Extend
 // this table when the UI supports a route (F3–F7).
 var spaRoutes = [][]string{
 	{},                    // the dashboard
@@ -64,7 +65,12 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "issues", "{temp}"},
 	{"{owner}", "{repo}", "pulls"},
 	{"{owner}", "{repo}", "pulls", "{index}"},
-	{"{owner}", "{repo}", "{code}"}, // a code address (codeAddress); the app opens its code view for it
+	{"{owner}", "{repo}", "{code}"},               // a code address (codeAddress); the app opens its code view for it
+	{"{owner}", "{repo}", "activity"},             // the activity (Pulse) of the last week
+	{"{owner}", "{repo}", "activity", "{period}"}, // … of another period (activityPeriods)
+	{"{owner}", "{repo}", "activity", "contributors"},
+	{"{owner}", "{repo}", "activity", "code-frequency"},
+	{"{owner}", "{repo}", "activity", "recent-commits"},
 	// The wiki: its Home, a page, the page list, a new page, a page's editor
 	// (the classic ?action=_pages, _new and _edit open the same views; a
 	// page's revisions stay classic: wikiClassic).
@@ -73,6 +79,13 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "wiki", "-", "pages"},
 	{"{owner}", "{repo}", "wiki", "-", "new"},
 	{"{owner}", "{repo}", "wiki", "{page}", "-", "edit"},
+}
+
+// activityPeriods are the periods of the classic activity page
+// (/{owner}/{repo}/activity/{period}, routers/web/repo/activity.go); keep in
+// step with next/src/features/activity/pulse.ts PERIODS.
+var activityPeriods = map[string]bool{
+	"daily": true, "halfweekly": true, "weekly": true, "monthly": true, "quarterly": true, "semiyearly": true, "yearly": true,
 }
 
 // wikiReserved are the wiki's segments that name no page: the classic
@@ -202,6 +215,10 @@ next:
 				}
 			case "{page}":
 				if seg == "" || seg == "." || seg == ".." || wikiReserved[seg] {
+					continue next
+				}
+			case "{period}":
+				if !activityPeriods[seg] {
 					continue next
 				}
 			default:

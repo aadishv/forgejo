@@ -25,6 +25,8 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
 		"/acme/atlas/wiki":                   "src/features/wiki/WikiPage.tsx",
 		"/acme/atlas/wiki/Home/-/edit":       "src/features/wiki/WikiPage.tsx",
+		"/acme/atlas/activity":               "src/features/activity/Activity.tsx",
+		"/acme/atlas/activity/contributors":  "src/features/activity/Activity.tsx",
 	} {
 		got := routeModules(p)
 		if assert.NotEmpty(t, got, p) {

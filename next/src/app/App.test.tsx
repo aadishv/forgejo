@@ -170,9 +170,10 @@ describe('signed in', () => {
       expect(document.title).toBe('acme/website · Forgejo');
     });
     expect(within(tabs).getByRole('link', {name: 'Wiki'}).getAttribute('href')).toBe('/acme/website/wiki');
-    // The wiki is the app's; Activity is the classic UI's.
+    // The wiki and the activity are the app's; Projects without a board is the classic UI's.
     expect(within(tabs).getByRole('link', {name: 'Wiki'}).hasAttribute('data-classic')).toBe(false);
-    expect(within(tabs).getByRole('link', {name: 'Activity'}).hasAttribute('data-classic')).toBe(true);
+    expect(within(tabs).getByRole('link', {name: 'Activity'}).hasAttribute('data-classic')).toBe(false);
+    expect(within(tabs).getByRole('link', {name: 'Projects'}).hasAttribute('data-classic')).toBe(true);
     expect(within(tabs).getByRole('button', {name: 'More of this repository'})).toBeTruthy();
     await router.navigate({to: '/$owner/$repo/issues', params: {owner: 'acme', repo: 'website'}});
     await waitFor(() => {
@@ -392,6 +393,26 @@ describe('signed in', () => {
       expect(router.state.location.pathname).toBe('/acme/website/issues/42');
     });
     expect(router.history.length).toBe(1);
+  });
+
+  test('the sync indicator: nothing to see while live and up to date, the badge once something waits', async () => {
+    const s = signedIn();
+    const {app} = await renderApp('/', s);
+    expect(screen.getByRole('status').textContent).toBe('Live');
+    expect(screen.queryByRole('button', {name: /show unsynced changes/})).toBeNull();
+    act(() => {
+      runInAction(() => {
+        app.ui.pendingIntents = 1;
+      });
+    });
+    expect(screen.getByRole('button', {name: /show unsynced changes/}).textContent).toBe('Live· 1 pending');
+    act(() => {
+      runInAction(() => {
+        app.ui.pendingIntents = 0;
+        s.data.status.connection = 'catching_up';
+      });
+    });
+    expect(screen.getByRole('button', {name: /show unsynced changes/}).textContent).toBe('Catching up');
   });
 
   test('the sync indicator: offline with pending intents, signed out with a sign-in button', async () => {

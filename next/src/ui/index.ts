@@ -4,6 +4,7 @@
 // The shared primitives. Features compose these; they never restyle a button,
 // menu, input or row locally (IMPLEMENTATION.md §2.4; tokens/no-restyle).
 
+export {AsideLink, AsideLinks, AsideSection, percent, ShareBar, type Share, type ShareTone} from './Aside.tsx';
 export {Avatar, AvatarGroup} from './Avatar.tsx';
 export {Badge, ChipButton, LabelChip, LabelDot, LabelIcon, type BadgeTone} from './Badge.tsx';
 export {Button, IconButton, type ButtonVariant} from './Button.tsx';

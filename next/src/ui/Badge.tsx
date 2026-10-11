@@ -18,9 +18,9 @@ const tones = {
 
 export type BadgeTone = keyof typeof tones;
 
-/** A small status or count chip. */
-export function Badge({tone = 'neutral', children}: {tone?: BadgeTone; children: ReactNode}) {
-  return <span className={cx(chip, 'rounded-sm', tones[tone])}>{children}</span>;
+/** A small status or count chip; `round`: a pill (a count beside a heading, a topic). */
+export function Badge({tone = 'neutral', round = false, children}: {tone?: BadgeTone; round?: boolean; children: ReactNode}) {
+  return <span className={cx(chip, round ? 'rounded-full' : 'rounded-sm', tones[tone])}>{children}</span>;
 }
 
 /** An issue label: its own colour (server data) as a dot, the name in normal text colour. */

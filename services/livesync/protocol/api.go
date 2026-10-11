@@ -53,6 +53,8 @@ package protocol
 //	GET    /-/sync/api/repos/{id}/blame/{commit}/{path}     → 200 APIBlame              (immutable)
 //	GET    /-/sync/api/repos/{id}/diff/{commit}             → 200 unified diff against the first parent (immutable)
 //	GET    /-/sync/api/repos/{id}/diff/{base}/{head}        → 200 unified diff base..head (immutable)
+//	GET    /-/sync/api/repos/{id}/activity/{commit}         → 200 APICommitActivity     (immutable)
+//	GET    /-/sync/api/repos/{id}/contributors/{commit}     → 200 APIContributors       (immutable); 202 + Retry-After while it is computed
 //
 // Immutable responses (HeaderImmutable): "Cache-Control: private,
 // max-age=31536000, immutable", "Vary: Authorization", a strong ETag (tree:
@@ -71,7 +73,9 @@ package protocol
 // without an error is the complete diff. (Forgejo served over FastCGI
 // cannot cut a response: there a diff cut by a git failure, logged, ends
 // like a complete one.) Only a complete response may be cached. The body
-// of a blame is immutable except APIBlameCommit.AuthorID (see there).
+// of a blame is immutable except APIBlameCommit.AuthorID (see there), and
+// so are the authors' accounts of APICommitActivity and APIContributors
+// (APIActivityAuthor). Their ETag is the commit.
 const (
 	// APIPrefix is the path prefix of the gap endpoints.
 	APIPrefix = "/-/sync/api"
@@ -345,4 +349,68 @@ type APIBlameCommit struct {
 	AuthorID    int64  `json:"author_id"`
 	AuthoredAt  string `json:"authored_at"`
 	CommittedAt string `json:"committed_at"`
+}
+
+// APICommitActivity is the history behind a repository's activity page
+// (Pulse) at a commit (its default branch's head): the commits without
+// merges reachable from Commit whose committer time is at or after Since —
+// a year and a day before Commit's own, so any period the page shows (at
+// most a year, ending at the viewer's now, never before Commit) is in it —
+// newest first, at most MaxCommitActivity of them (Truncated: there were
+// more). Each commit is [committer time in Unix seconds, index in Authors,
+// lines added, lines deleted]. Authors are the commits' authors, each once
+// (by the Forgejo account their email belongs to, else by email). The same
+// rows give the commit and line counts and the top committers of every
+// period: a client computes each period from one cached response.
+type APICommitActivity struct {
+	Commit    string              `json:"commit"`
+	Since     int64               `json:"since"`
+	Authors   []APIActivityAuthor `json:"authors"`
+	Commits   [][]int64           `json:"commits"`
+	Truncated bool                `json:"truncated"`
+}
+
+// MaxCommitActivity bounds APICommitActivity.Commits.
+const MaxCommitActivity = 20000
+
+// APIActivityAuthor is a commit author of APICommitActivity or
+// APIContributors. Login and AvatarURL are the Forgejo account one of
+// their emails belongs to, as the classic activity pages link it (empty:
+// none), and Name its display name (else the name in the commits). Email
+// addresses are not included. The account is a display hint as of the
+// response: it can go stale in a cached copy, the rest cannot.
+type APIActivityAuthor struct {
+	Name      string `json:"name"`
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+// APIContributors is what the classic contributors, code frequency and
+// recent commits graphs show (computed in the background, as there: 202
+// with Retry-After until it is ready): the commits without merges
+// reachable from Commit, by week of their author date. Total holds every
+// week with a commit, oldest first; Contributors are the authors, most
+// commits first, each with their weeks.
+type APIContributors struct {
+	Commit       string           `json:"commit"`
+	Total        []APIWeek        `json:"total"`
+	Contributors []APIContributor `json:"contributors"`
+}
+
+// APIContributor is an author of APIContributors.
+type APIContributor struct {
+	Name      string    `json:"name"`
+	Login     string    `json:"login"`
+	AvatarURL string    `json:"avatar_url"`
+	Commits   int64     `json:"commits"`
+	Weeks     []APIWeek `json:"weeks"`
+}
+
+// APIWeek is a week of APIContributors: Week is its first day (a Sunday,
+// 00:00 UTC) in Unix milliseconds.
+type APIWeek struct {
+	Week      int64 `json:"week"`
+	Commits   int   `json:"commits"`
+	Additions int   `json:"additions"`
+	Deletions int   `json:"deletions"`
 }

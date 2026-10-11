@@ -62,6 +62,7 @@ test('canonical routes and the repository of a route', () => {
   expect(isCanonical('/acme/atlas', '?ui=classic')).toBe(false);
   expect(repoOfPath('/acme/Atlas/issues/3')).toBe('acme/atlas');
   expect(repoOfPath('/-/next/code/acme/atlas/src/-')).toBe('acme/atlas');
+  expect(repoOfPath('/acme/atlas/activity/monthly')).toBe('acme/atlas');
   expect(repoOfPath('/notifications')).toBeUndefined();
   expect(repoOfPath('/user/settings')).toBeUndefined();
 });
@@ -87,7 +88,7 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/actions/runs/3/jobs/0/attempt/1')).toBe('/-/next/code/acme/atlas/actions/runs/3/jobs/0/attempt/1/-');
   for (const p of ['/explore/repos', '/user/settings', '//evil.example/x', 'https://evil.example/']) expect(appPageOf(p), p).toBe('/');
   // A repository's classic-only pages: the nearest page of the app, never Home.
-  for (const p of ['/acme/atlas/settings', '/acme/atlas/milestones', '/acme/atlas/activity', '/acme/atlas/stars', '/acme/atlas/labels']) {
+  for (const p of ['/acme/atlas/settings', '/acme/atlas/milestones', '/acme/atlas/activity_author_data', '/acme/atlas/stars', '/acme/atlas/labels']) {
     expect(appPageOf(p), p).toBe('/acme/atlas');
   }
   // The wiki: its page; the classic wiki's ?action= views; what the app has not, the wiki's Home.
@@ -99,6 +100,11 @@ test('classic pages\' way back to the app: the app\'s page for the address, else
   expect(appPageOf('/acme/atlas/wiki/raw/logo.png')).toBe('/acme/atlas/wiki');
   expect(appPageOf('/acme/atlas/releases/tag/v0.2.0')).toBe('/-/next/code/acme/atlas/releases/-');
   expect(appPageOf('/acme/atlas/projects')).toBe('/-/next/boards');
+  // The activity pages are the app's.
+  expect(appPageOf('/acme/atlas/activity')).toBe('/acme/atlas/activity');
+  expect(appPageOf('/acme/atlas/activity/monthly')).toBe('/acme/atlas/activity/monthly');
+  expect(appPageOf('/acme/atlas/activity/code-frequency')).toBe('/acme/atlas/activity/code-frequency');
+  expect(appPageOf('/acme/atlas/activity/hourly')).toBe('/acme/atlas');
   expect(appPageOf('/acme/atlas/issues/new')).toBe('/acme/atlas/issues');
 });
 

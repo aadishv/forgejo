@@ -56,9 +56,10 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
 /**
  * Whether a site path (and its query) is a canonical route the app renders (B8 spaRoutes):
  * `/`, `/notifications`, `/issues`, `/pulls`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
- * `/{owner}/{repo}/pulls[/{n}]`, the wiki (`/{owner}/{repo}/wiki[/…]`). `?ui=classic` asks for the classic page,
- * and so does an owner's profile tab (`/{owner}?tab=activity`; the app shows the repositories) or a wiki page's
- * revisions (`?action=_revision`). Keep in step with routers/livesync/spa.go.
+ * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/activity[/{period or graph}]`, the wiki (`/{owner}/{repo}/wiki[/…]`),
+ * code addresses. `?ui=classic` asks for the classic page, and so does an owner's profile tab
+ * (`/{owner}?tab=activity`; the app shows the repositories) or a wiki page's revisions (`?action=_revision`).
+ * Keep in step with routers/livesync/spa.go.
  */
 export function isSpaRoute(path: string, search = ''): boolean {
   const q = new URLSearchParams(search);
@@ -78,6 +79,7 @@ export function isSpaRoute(path: string, search = ''): boolean {
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.
   if (codeAddress(segs.slice(2))) return true;
   if (segs.length > 4) return false;
+  if (kind === 'activity') return n === undefined || ACTIVITY_PAGES.has(n);
   if (kind !== 'issues' && kind !== 'pulls') return false;
   // An issue created offline is at "new-<uuid>" until Forgejo numbers it (features/issue/paths.ts TEMP_PATH).
   return n === undefined || /^[1-9]\d{0,17}$/.test(n) || (kind === 'issues' && TEMP_ISSUE.test(n));
@@ -90,6 +92,14 @@ function decodeSegment(s: string): string {
     return s;
   }
 }
+
+/**
+ * What may follow `/{owner}/{repo}/activity`: a period of the Pulse (spa.go activityPeriods,
+ * features/activity/pulse.ts PERIODS) or one of its graphs.
+ */
+const ACTIVITY_PAGES = new Set([
+  'daily', 'halfweekly', 'weekly', 'monthly', 'quarterly', 'semiyearly', 'yearly', 'contributors', 'code-frequency', 'recent-commits',
+]);
 
 /** spa.go `codeAddress`: what follows a repository in a code page's address (the app's code views mirror it). */
 function codeAddress(rest: string[]): boolean {

@@ -72,6 +72,7 @@ export function nextPathOf(path: string): string | undefined {
     if (v === undefined) return undefined;
     return rest.length === 0 ? `${repoPath}/wiki` : wikiPath(a, b, v);
   }
+  if (c === 'activity') return isSpaRoute(path) ? `${repoPath}/activity${rest[0] === undefined ? '' : `/${rest[0]}`}` : undefined;
   const code = [c, ...rest].join('/');
   return parseCodePath(code) ? codePath(a, b, code) : undefined;
 }
@@ -123,7 +124,7 @@ function nearestAppPage(path: string): string | undefined {
 }
 
 /** A repository's sections only the classic UI has (its More menu links them). */
-const CLASSIC_SECTIONS = new Set(['wiki', 'activity', 'projects', 'settings', 'milestones', 'labels', 'packages', 'forks', 'stars', 'watchers', 'graph', 'find']);
+const CLASSIC_SECTIONS = new Set(['wiki', 'projects', 'settings', 'milestones', 'labels', 'packages', 'forks', 'stars', 'watchers', 'graph', 'find']);
 
 /**
  * Whether a classic address is a page the classic UI is known to have and the app does not: a repository's
@@ -234,6 +235,6 @@ export function repoOfPath(path: string): string | undefined {
   }
   const [a = '', b = '', c] = segs;
   if (segs.length < 2 || !isOwnerName(a) || !NAME.test(b)) return undefined;
-  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'wiki') return undefined;
+  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki') return undefined;
   return `${a}/${b}`.toLowerCase();
 }

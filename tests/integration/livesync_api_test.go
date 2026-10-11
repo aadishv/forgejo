@@ -139,6 +139,7 @@ func livesyncAPIScenario(t *testing.T, u *url.URL) {
 	t.Run("body", func(t *testing.T) { livesyncAPIBody(t, user2, user5, read2, delta) })
 	t.Run("viewed", func(t *testing.T) { livesyncAPIViewed(t, user2, user5, read2, delta) })
 	t.Run("git", func(t *testing.T) { livesyncAPIGit(t, user2, user5) })
+	t.Run("activity", func(t *testing.T) { livesyncAPIActivity(t, user2, user5) })
 	t.Run("markdown", func(t *testing.T) { livesyncAPIMarkdown(t, user2, user5) })
 	t.Run("markup", func(t *testing.T) { livesyncAPIMarkup(t, user2, user5) })
 	t.Run("issue project", func(t *testing.T) { livesyncAPIIssueProject(t, user2, user5) })
