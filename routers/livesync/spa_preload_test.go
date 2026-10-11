@@ -23,6 +23,8 @@ func TestRouteModules(t *testing.T) {
 		"/-/next/projects/4":                 "src/features/board/BoardView.tsx",
 		"/-/next/code/acme/atlas/src/main/-": "src/features/code/CodePage.tsx",
 		"/-/next/boards":                     "src/features/board/BoardsList.tsx",
+		"/acme/atlas/settings":               "src/features/settings/Settings.tsx",
+		"/acme/atlas/settings/hooks":         "src/features/settings/Settings.tsx",
 		"/repo/create":                       "src/features/new/NewRepo.tsx",
 		"/org/create":                        "src/features/new/NewOrg.tsx",
 		"/acme/atlas/wiki":                   "src/features/wiki/WikiPage.tsx",

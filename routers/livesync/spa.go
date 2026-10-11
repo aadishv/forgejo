@@ -68,6 +68,11 @@ var spaRoutes = [][]string{
 	{"{owner}", "{repo}", "issues", "{temp}"},
 	{"{owner}", "{repo}", "pulls"},
 	{"{owner}", "{repo}", "pulls", "{index}"},
+	{"{owner}", "{repo}", "settings"}, // a repository's settings (the app's sections; the others stay classic)
+	{"{owner}", "{repo}", "settings", "collaboration"},
+	{"{owner}", "{repo}", "settings", "branches"},
+	{"{owner}", "{repo}", "settings", "hooks"},
+	{"{owner}", "{repo}", "settings", "keys"},
 	{"{owner}", "{repo}", "labels"},     // the repository's labels
 	{"{owner}", "{repo}", "milestones"}, // its milestones (open, closed)
 	{"{owner}", "{repo}", "milestones", "new"},

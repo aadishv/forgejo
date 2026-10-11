@@ -169,6 +169,17 @@ func TestSPARoute(t *testing.T) {
 		"/user2/repo1/pulls/2/files":                                   true,
 		"/user2/repo1/pulls/2/checks":                                  false,
 		"/user2/repo1/src/branch/master/../../settings":                false,
+		// Settings: the sections the app has; the others are classic.
+		"/user2/repo1/settings":               true,
+		"/user2/repo1/settings/collaboration": true,
+		"/user2/repo1/settings/branches":      true,
+		"/user2/repo1/settings/hooks":         true,
+		"/user2/repo1/settings/keys":          true,
+		"/user2/repo1/settings/units":         false,
+		"/user2/repo1/settings/hooks/git":     false,
+		"/user2/repo1/settings/hooks/3":       false,
+		"/user2/repo1.wiki/settings":          false,
+		"/user/settings/hooks":                false,
 		// The wiki (its page addresses; the classic wiki's raw files and search stay classic).
 		"/user2/repo1/wiki":                     true,
 		"/user2/repo1/wiki/":                    true,
@@ -323,6 +334,7 @@ func TestSPAServing(t *testing.T) {
 			}
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2/repo1", opted...).Code, "a repository's home")
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2?tab=repositories", opted...).Code, "an owner's page")
+			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user2/repo1/settings/hooks", opted...).Code, "a repository's settings")
 			for _, p := range []string{"/user2/repo1/wiki", "/user2/repo1/wiki/?action=_pages", "/user2/repo1/wiki/Home?action=_edit", "/user2/repo1/wiki/-/pages"} {
 				assert.Equal(t, http.StatusOK, get(t, h, sub+p, opted...).Code, p)
 			}
@@ -336,7 +348,7 @@ func TestSPAServing(t *testing.T) {
 			other := append([]string{"Referer", "https://example.com" + sub + "/user/settings/account"}, opted...)
 			assert.Equal(t, http.StatusOK, get(t, h, sub+"/user/settings/account", other...).Code, "from the app's page")
 			// A wiki page's revisions are the classic page's.
-			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision", "/user/settings/applications", "/user/settings?ui=classic"} {
+			for _, p := range []string{"/user2/repo1/issues/new", "/api/v1/issues", "/user2/repo1/settings/units", "/user2/repo1/settings?ui=classic", "/user2/repo1/issues/1?ui=classic", "/user2/repo1?ui=classic", "/user2?tab=activity", "/user2?ui=classic", "/user2/repo1/wiki/Home?action=_revision", "/user/settings/applications", "/user/settings?ui=classic"} {
 				assert.Equal(t, 299, get(t, h, sub+p, opted...).Code, p)
 			}
 			req := httptest.NewRequest(http.MethodPost, sub+"/user2/repo1/issues/1", nil)

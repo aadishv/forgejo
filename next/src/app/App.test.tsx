@@ -146,11 +146,11 @@ describe('signed in', () => {
 
   test('an unknown address keeps the shell and offers the classic page', async () => {
     const s = signedIn();
-    await renderApp('/-/next/acme/website/settings', s);
+    await renderApp('/-/next/acme/website/settings/units', s);
     expect(screen.getByRole('complementary', {name: 'Sidebar'})).toBeTruthy();
     // The classic UI has the page: "Not available here" (a page nobody has is "Not found").
     expect(screen.getByRole('heading', {name: 'Not available here'})).toBeTruthy();
-    expect((await screen.findByRole('link', {name: /Open this page/})).getAttribute('href')).toBe('/acme/website/settings');
+    expect((await screen.findByRole('link', {name: /Open this page/})).getAttribute('href')).toBe('/acme/website/settings/units');
     expect(screen.getByRole('link', {name: /Go to Home/})).toBeTruthy();
   });
 

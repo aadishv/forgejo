@@ -216,6 +216,26 @@ const repoPullRoute = createRoute({
   component: lazyView(() => import('../features/issue/IssueView.tsx'), 'IssueView'),
 });
 
+// A repository's settings (administrators): the classic UI's addresses, one route per section the app has (the
+// others stay classic: the settings' navigation links them).
+function settingsRoute<P extends `/$owner/$repo/settings${string}`>(path: P, view: 'SettingsGeneral' | 'SettingsCollaboration' | 'SettingsBranches' | 'SettingsHooks' | 'SettingsKeys') {
+  return createRoute({
+    getParentRoute: () => shellRoute,
+    path,
+    loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params as {owner: string; repo: string}, location),
+    staticData: {skeleton: 'detail', header: 'toolbar'},
+    component: lazyView(() => import('../features/settings/Settings.tsx'), view),
+  });
+}
+
+const settingsRoutes = [
+  settingsRoute('/$owner/$repo/settings', 'SettingsGeneral'),
+  settingsRoute('/$owner/$repo/settings/collaboration', 'SettingsCollaboration'),
+  settingsRoute('/$owner/$repo/settings/branches', 'SettingsBranches'),
+  settingsRoute('/$owner/$repo/settings/hooks', 'SettingsHooks'),
+  settingsRoute('/$owner/$repo/settings/keys', 'SettingsKeys'),
+] as const;
+
 // The wiki (features/wiki): Forgejo's addresses (its Home, a page) and clean ones for what the classic wiki puts in
 // `?action=` (the page list, a new page, a page's editor: the classic addresses go on to them). The loader starts
 // fetching the page, so a hovered link (preload on intent) has it in memory when it is clicked.
@@ -544,7 +564,7 @@ const routeTree = rootRoute.addChildren([
   callbackRoute,
   shellRoute.addChildren([
     baseRoute, homeRoute, myIssuesRoute, myPullsRoute, inboxRoute, newRepoRoute, newOrgRoute,
-    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, boardsRoute, boardRoute, codeRoute,
+    repoHomeRoute, repoIssuesRoute, repoPullsRoute, repoIssueRoute, repoPullRoute, ...settingsRoutes, boardsRoute, boardRoute, codeRoute,
     repoActivityRoute, repoActivityPeriodRoute, repoContributorsRoute, repoCodeFrequencyRoute, repoRecentCommitsRoute,
     wikiHomeRoute, wikiPageRoute, wikiPagesRoute, wikiNewRoute, wikiEditRoute,
     settingsProfileRoute, settingsAccountRoute, settingsAppearanceRoute, settingsKeysRoute,

@@ -148,7 +148,7 @@ export function RepoHeader({owner, repo, repoId, title, icon, children, docTitle
       icon={icon} title={title} docTitle={tabTitle}>{children}</StackedPageHeader>;
 }
 
-type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | 'wiki' | undefined;
+type Tab = 'code' | 'issues' | 'pulls' | 'actions' | 'activity' | 'wiki' | 'settings' | undefined;
 
 /**
  * The code views that are the Code tab, as GitHub's Code tab stays selected on a repository's files, history,
@@ -170,7 +170,7 @@ export function tabOfPath(path: string): Tab {
   if (kind === undefined) return 'code';
   // Labels and milestones are the Issues tab's (GitHub's).
   if (ISSUE_SECTIONS.has(kind)) return 'issues';
-  return kind === 'issues' || kind === 'pulls' || kind === 'activity' || kind === 'wiki' ? kind : undefined;
+  return kind === 'issues' || kind === 'pulls' || kind === 'activity' || kind === 'wiki' || kind === 'settings' ? kind : undefined;
 }
 
 /** One of the repository's tabs: in the bar, and the same entry as a row of "More" when the bar is too narrow. */
@@ -253,7 +253,11 @@ export const RepoTabs = observer(function RepoTabs({owner, repo, repoId}: {owner
       tab: <TabLink><Link to="/$owner/$repo/activity" params={{owner, repo}} {...cur('activity')}><Icon icon={ChartLine} size="sm"/>Activity</Link></TabLink>,
       item: <MenuItem icon={ChartLine} onSelect={() => void navigate({to: '/$owner/$repo/activity', params: {owner, repo}})}>Activity</MenuItem>,
     },
-    ...admin ? [classic('settings', `${base}/settings`, Settings, 'Settings')] : [],
+    ...admin ? [{
+      key: 'settings',
+      tab: <TabLink><Link to="/$owner/$repo/settings" params={{owner, repo}} {...cur('settings')}><Icon icon={Settings} size="sm"/>Settings</Link></TabLink>,
+      item: <MenuItem icon={Settings} onSelect={() => void navigate({to: '/$owner/$repo/settings', params: {owner, repo}})}>Settings</MenuItem>,
+    }] : [],
   ];
   return (
     <TabNav label="Repository" more={(hidden) => <RepoMore overflow={tabs.filter((_, i) => hidden.includes(i))}/>}>

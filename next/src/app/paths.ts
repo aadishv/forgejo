@@ -16,7 +16,7 @@
 
 import {END, parseCodePath} from '../code/refs.ts';
 import {classicWikiPath, parseWikiRest, wikiActionView, wikiPath} from '../features/wiki/paths.ts';
-import {isOwnerName, isSpaRoute, NAME, USER_SETTINGS_PAGES} from '../sw/routes.ts';
+import {isOwnerName, isSpaRoute, NAME, SETTINGS_SECTIONS, USER_SETTINGS_PAGES} from '../sw/routes.ts';
 
 export {isOwnerName};
 
@@ -65,6 +65,11 @@ export function nextPathOf(path: string): string | undefined {
   if (!isOwnerName(a) || !NAME.test(b)) return undefined;
   const repoPath = `/${enc(a)}/${enc(b)}`;
   if (c === undefined) return repoPath;
+  // Settings: the sections the app has (the others stay classic).
+  if (c === 'settings') {
+    if (rest.length === 0) return `${repoPath}/settings`;
+    return rest.length === 1 && SETTINGS_SECTIONS.includes(rest[0] ?? '') ? `${repoPath}/settings/${rest[0] ?? ''}` : undefined;
+  }
   if (c === 'issues' || c === 'pulls') {
     const [n, sub] = rest;
     if (n === undefined) return `${repoPath}/${c}`;
@@ -129,7 +134,8 @@ export function appPageOf(classic: string): string {
 /**
  * The nearest page of the app to a classic page it does not render (the pill on the classic page goes there,
  * never to an unrelated Home): a release's page is the releases page, the repository's projects its boards, a new
- * issue its issue list, anything else of a repository (wiki, settings, milestones, …) its home.
+ * issue its issue list, a settings section only the classic UI has its settings, anything else of a repository
+ * (wiki, milestones, …) its home.
  */
 function nearestAppPage(path: string): string | undefined {
   if (/%(?:2e|2f|5c)/i.test(path)) return undefined;
@@ -140,6 +146,7 @@ function nearestAppPage(path: string): string | undefined {
   if (c === 'releases' || c === 'tags') return codePath(a, b, c);
   if (c === 'projects') return '/-/next/boards';
   if (c === 'issues' || c === 'pulls') return `/${enc(a)}/${enc(b)}/${c}`;
+  if (c === 'settings') return `/${enc(a)}/${enc(b)}/settings`;
   if (c === 'wiki') return `/${enc(a)}/${enc(b)}/wiki`;
   if (c === 'labels' || c === 'milestones' || c === 'milestone') return `/${enc(a)}/${enc(b)}/${c === 'labels' ? 'labels' : 'milestones'}`;
   return `/${enc(a)}/${enc(b)}`;
@@ -261,6 +268,6 @@ export function repoOfPath(path: string): string | undefined {
   }
   const [a = '', b = '', c] = segs;
   if (segs.length < 2 || !isOwnerName(a) || !NAME.test(b)) return undefined;
-  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki' && !ISSUE_SECTIONS.has(c)) return undefined;
+  if (c !== undefined && c !== 'issues' && c !== 'pulls' && c !== 'activity' && c !== 'wiki' && c !== 'settings' && !ISSUE_SECTIONS.has(c)) return undefined;
   return `${a}/${b}`.toLowerCase();
 }

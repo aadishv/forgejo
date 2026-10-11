@@ -50,6 +50,9 @@ export function isOwnerName(s: string): boolean {
   return NAME.test(s) && !RESERVED.has(s.toLowerCase()) && !RESERVED_SUFFIX.test(s);
 }
 
+/** A repository's settings sections the app renders (`/{owner}/{repo}/settings/{section}`; spa.go spaRoutes). */
+export const SETTINGS_SECTIONS: readonly string[] = ['collaboration', 'branches', 'hooks', 'keys'];
+
 /** The address segment of an issue created offline (spa.go reTempIssue). */
 const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
 
@@ -58,8 +61,9 @@ const TEMP_ISSUE = /^new-[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}
  * `/`, `/notifications`, `/issues`, `/pulls`, `/repo/create`, `/org/create`, `/{owner}`, `/{owner}/{repo}`, `/{owner}/{repo}/issues[/{n}]`,
  * `/{owner}/{repo}/pulls[/{n}]`, `/{owner}/{repo}/activity[/{period or graph}]`, the wiki (`/{owner}/{repo}/wiki[/…]`),
  * `/{owner}/{repo}/labels`, `/{owner}/{repo}/milestones[/new]`, `/{owner}/{repo}/milestone/{n}[/edit]`,
- * code addresses, the viewer's settings (`/user/settings[/account|appearance|keys]`). `?ui=classic` asks for the classic page, and so does an owner's profile tab
- * (`/{owner}?tab=activity`; the app shows the repositories) or a wiki page's revisions (`?action=_revision`).
+ * `/{owner}/{repo}/settings[/{section}]`, code addresses, the viewer's settings (`/user/settings[/account|appearance|keys]`).
+ * `?ui=classic` asks for the classic page, and so does an owner's profile tab (`/{owner}?tab=activity`; the app shows the
+ * repositories) or a wiki page's revisions (`?action=_revision`).
  * Keep in step with routers/livesync/spa.go.
  */
 export function isSpaRoute(path: string, search = ''): boolean {
@@ -83,6 +87,7 @@ export function isSpaRoute(path: string, search = ''): boolean {
   if (kind === 'wiki') return parseWikiRest(segs.slice(3).map(decodeSegment)) !== undefined && q.get('action') !== '_revision';
   // A code address, or a pull request's Files or Commits tab (spa.go codeAddress): the app's code view.
   if (codeAddress(segs.slice(2))) return true;
+  if (kind === 'settings') return segs.length === 3 || (segs.length === 4 && SETTINGS_SECTIONS.includes(n ?? ''));
   // Labels, milestones, a milestone and its form (features/meta).
   if (kind === 'labels') return segs.length === 3;
   if (kind === 'milestones') return segs.length === 3 || (segs.length === 4 && n === 'new');

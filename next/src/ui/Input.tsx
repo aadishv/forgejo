@@ -14,10 +14,12 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean | undefined;
   /** A decorative icon inside, before the text (search). */
   icon?: LucideIcon | undefined;
+  /** Code-like text (a branch pattern, a path): the monospace face. */
+  mono?: boolean | undefined;
   ref?: Ref<HTMLInputElement>;
 }
 
-export function Input({size = 'md', invalid, icon, className, ...rest}: InputProps) {
+export function Input({size = 'md', invalid, icon, mono, className, ...rest}: InputProps) {
   const input = (
     <input
       aria-invalid={invalid}
@@ -26,7 +28,7 @@ export function Input({size = 'md', invalid, icon, className, ...rest}: InputPro
         controlHeight[size],
         field,
         'px-2',
-        size === 'sm' ? 'text-sm' : 'text-base',
+        mono ? 'font-mono text-code' : size === 'sm' ? 'text-sm' : 'text-base',
         icon ? 'w-full pl-7' : className,
       )}
       {...rest}
@@ -115,12 +117,15 @@ export function EditableHeading({label, onEdit, children}: {label: string; onEdi
  * A form's field: its name above the control (`htmlFor`: the control's id), then a hint or — once something is
  * wrong — the problem, in the danger colour (`errorId`: the control's aria-describedby).
  */
-export function Field({label, htmlFor, hint, error, errorId, children}: {
-  label: string; htmlFor: string; hint?: ReactNode; error?: string | undefined; errorId?: string | undefined; children: ReactNode;
+export function Field({label, htmlFor, hint, error, errorId, optional, children}: {
+  label: string; htmlFor: string; hint?: ReactNode; error?: string | undefined; errorId?: string | undefined;
+  /** Marked "(optional)" after the name. */
+  optional?: boolean | undefined;
+  children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={htmlFor} className="text-sm font-medium text-fg">{label}</label>
+      <label htmlFor={htmlFor} className="text-sm font-medium text-fg">{label}{optional && <span className="font-normal text-fg-subtle"> (optional)</span>}</label>
       {children}
       {error ? <p id={errorId} className="text-sm text-danger">{error}</p> : hint ? <p id={errorId} className="text-sm text-fg-muted">{hint}</p> : null}
     </div>

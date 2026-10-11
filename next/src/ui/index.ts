@@ -44,3 +44,8 @@ export {Code, TextLink} from './Text.tsx';
 export {Tooltip, TooltipProvider} from './Tooltip.tsx';
 export {BoardCard, BoardColumn, BoardColumnDraft, BoardLanes, DropIndicator} from './Board.tsx';
 export {PromptDialog} from './PromptDialog.tsx';
+export {ConfirmDialog} from './ConfirmDialog.tsx';
+export {FormSection, hintId, SettingRow} from './Form.tsx';
+export {SectionNav, SectionNavHeading, SectionNavLink} from './SectionNav.tsx';
+export {Select, type SelectOption} from './Select.tsx';
+export {Switch} from './Switch.tsx';
