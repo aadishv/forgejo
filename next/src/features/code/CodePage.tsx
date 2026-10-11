@@ -46,8 +46,9 @@ function viewName(splat: string): string {
 }
 
 /**
- * A code view's frame: the header (title, controls), the repository's tabs
- * and the scroll container, which the body gets (lists virtualize against it).
+ * A code view's frame: the header (breadcrumb, the repository's tabs, the
+ * view's title and controls) and the scroll container, which the body gets
+ * (lists virtualize against it).
  */
 export function CodeFrame({view, title, controls, docTitle, children}: {
   view: CodeViewProps; title: ReactNode; controls?: ReactNode; children: (scroller: HTMLDivElement | null) => ReactNode;

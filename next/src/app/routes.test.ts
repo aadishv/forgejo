@@ -94,3 +94,18 @@ test('the server preloads the views the router loads (spa_preload.go routeModule
     expect(lazy, m).toBe(true);
   }
 });
+
+test('a repository page\'s skeleton has its header\'s rows (RepoHeader): breadcrumb, tabs, title row', () => {
+  const routes = Object.values(router().routesById).filter((r) => r.options.staticData?.skeleton !== undefined);
+  const repoPages = routes.filter((r) => r.fullPath.startsWith('/$owner/$repo') || r.fullPath.startsWith('/-/next/code/'));
+  expect(repoPages.length).toBeGreaterThan(6);
+  for (const r of repoPages) {
+    const header = r.options.staticData?.header;
+    // The home has no title row; an issue's or a pull request's page has no repository tabs (one row).
+    if (r.fullPath === '/$owner/$repo') expect(header, r.fullPath).toBe('tabs');
+    else if (/\/(issues|pulls)\/\$index$/.test(r.fullPath)) expect(header, r.fullPath).toBeUndefined();
+    else expect(header, r.fullPath).toBe('toolbar');
+  }
+  // Every page outside a repository: one row.
+  for (const r of routes.filter((x) => !repoPages.includes(x))) expect(r.options.staticData?.header, r.fullPath).toBeUndefined();
+});

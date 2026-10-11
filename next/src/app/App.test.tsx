@@ -73,6 +73,9 @@ describe('boot', () => {
     const html = renderToStaticMarkup(<BootShell/>);
     expect(html.match(/data-sk-row=""/g)).toHaveLength(SKELETON_MAX_ROWS);
     expect(html).toContain('logged-out:flex');
+    // A repository page's header rows under the first (the splash's data-header shows them).
+    expect(html).toContain('header-tabs:contents');
+    expect(html).toContain('header-toolbar:contents');
     const div = document.createElement('div');
     div.innerHTML = html;
     expect(classConflicts(div)).toEqual([]);
@@ -164,8 +167,14 @@ describe('signed in', () => {
     // GitHub's order; the home is the Code tab. Pages only the classic UI has are marked (data-classic).
     expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Code', 'Issues', 'Pull requests', 'Actions', 'Projects', 'Wiki', 'Activity']);
     expect(within(tabs).getByRole('link', {name: 'Code'}).getAttribute('aria-current')).toBe('page');
-    // The home is titled like its tab; the browser tab names the repository alone.
-    expect(screen.getByRole('heading', {level: 1}).textContent).toBe('Code');
+    // The home has no title row (GitHub's): its heading is the repository's crumb; the browser tab names the
+    // repository alone. Its actions end the breadcrumb's row, and the header's rows are breadcrumb, then tabs.
+    expect(screen.getByRole('heading', {level: 1}).textContent).toBe('website');
+    expect(within(crumbs).getByRole('heading', {level: 1})).toBeTruthy();
+    const header = crumbs.closest('header');
+    expect(header?.contains(tabs)).toBe(true);
+    expect(crumbs.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(header ?? document.body).getByRole('button', {name: /New issue/})).toBeTruthy();
     await waitFor(() => {
       expect(document.title).toBe('acme/website · Forgejo');
     });
@@ -346,6 +355,15 @@ describe('signed in', () => {
     const s = signedIn();
     const {router} = await renderApp('/acme/website/issues', s);
     expect(screen.getByRole('heading', {name: 'Issues'})).toBeTruthy();
+    // GitHub's rows: the breadcrumb (with the sync indicator), the repository's tabs, then the title with the
+    // list's controls — none of them in the breadcrumb's row.
+    const crumbs = screen.getByRole('navigation', {name: 'Breadcrumb'});
+    const tabs = screen.getByRole('navigation', {name: 'Repository'});
+    const title = screen.getByRole('heading', {level: 1, name: 'Issues'});
+    expect(crumbs.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tabs.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(title.parentElement ?? document.body).getByRole('button', {name: /New issue/})).toBeTruthy();
+    expect(within(crumbs.parentElement ?? document.body).queryByRole('button', {name: /New issue/})).toBeNull();
     expect(s.data.held.get('repo:20')).toBe(1);
     await act(() => router.navigate({to: '/'}));
     expect(s.data.held.has('repo:20')).toBe(false);

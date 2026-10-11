@@ -32,7 +32,7 @@ import {
 } from './search.ts';
 import {PAGE_SCROLLER} from './shell/Frame.tsx';
 import {Shell} from './shell/Shell.tsx';
-import {readSplash, type SkeletonShape} from './splash.ts';
+import {readSplash, type SkeletonHeader, type SkeletonShape} from './splash.ts';
 import type {App} from './store.ts';
 
 export interface RouterContext {
@@ -46,6 +46,8 @@ declare module '@tanstack/react-router' {
   interface StaticDataRouteOption {
     /** The skeleton the boot shell shows when the app reloads on this route (splash). */
     skeleton?: SkeletonShape;
+    /** The header's rows in that skeleton (default: one row): a repository page's breadcrumb, tabs and title row. */
+    header?: SkeletonHeader;
   }
 }
 
@@ -153,7 +155,7 @@ const repoHomeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'tabs'},
   component: lazyView(() => import('../features/repo/RepoHome.tsx'), 'RepoHome'),
 });
 
@@ -162,7 +164,7 @@ const repoIssuesRoute = createRoute({
   path: '/$owner/$repo/issues',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
   validateSearch: (s): IssueListSearch => issueListSearch(s),
-  staticData: {skeleton: 'list'},
+  staticData: {skeleton: 'list', header: 'toolbar'},
   component: lazyView(() => import('../features/repo/RepoViews.tsx'), 'RepoIssues'),
 });
 
@@ -171,7 +173,7 @@ const repoPullsRoute = createRoute({
   path: '/$owner/$repo/pulls',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
   validateSearch: (s): IssueListSearch => issueListSearch(s),
-  staticData: {skeleton: 'list'},
+  staticData: {skeleton: 'list', header: 'toolbar'},
   component: lazyView(() => import('../features/repo/RepoViews.tsx'), 'RepoPulls'),
 });
 
@@ -278,7 +280,7 @@ const repoActivityRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityPulse'),
 });
 
@@ -286,7 +288,7 @@ const repoActivityPeriodRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/$period',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityPulse'),
 });
 
@@ -294,7 +296,7 @@ const repoContributorsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/contributors',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityContributors'),
 });
 
@@ -302,7 +304,7 @@ const repoCodeFrequencyRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/code-frequency',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityCodeFrequency'),
 });
 
@@ -310,7 +312,7 @@ const repoRecentCommitsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/$owner/$repo/activity/recent-commits',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: activityView('ActivityRecentCommits'),
 });
 
@@ -338,7 +340,7 @@ const codeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/-/next/code/$owner/$repo/$',
   loader: ({context: {app}, params, location}): Promise<RepoMatch> => repoLoader(app, params, location),
-  staticData: {skeleton: 'detail'},
+  staticData: {skeleton: 'detail', header: 'toolbar'},
   component: lazyView(() => import('../features/code/CodePage.tsx'), 'CodePage'),
 });
 
