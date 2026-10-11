@@ -8,8 +8,9 @@
 // contents, file names and logs never reach an HTML sink.
 
 import {Slot} from 'radix-ui';
-import {type ReactElement, type ReactNode, type Ref, useLayoutEffect, useRef} from 'react';
+import {Children, isValidElement, type ReactElement, type ReactNode, type Ref, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {cx} from './cx.ts';
+import {Tooltip} from './Tooltip.tsx';
 
 /** Syntax classes by token class (workers/highlight.ts SYN): plain, keyword, string, comment, function, constant, parameter, punctuation, link. */
 const SYN = ['', 'text-syn-keyword', 'text-syn-string', 'text-syn-comment', 'text-syn-function', 'text-syn-constant', 'text-syn-parameter', 'text-fg-muted', 'text-accent-fg'] as const;
@@ -234,25 +235,80 @@ export function CodeFileHeader({path, oldPath, status, stat, leading, children, 
  * A tab bar of links (a repository's sections, a pull request's views). Put TabLink children in it. On a narrow
  * screen it scrolls sideways, and the current tab is scrolled into it (a page opened from a tab far right showed
  * the strip from its start, without the tab).
+ *
+ * With `more`, the tabs that do not fit go into an overflow menu instead (like GitHub's repository tabs):
+ * `more(from)` renders that menu (always shown, last) for the tabs from index `from` on, which the bar hides.
+ * Each child is one tab; a tab's width is measured while it is shown and remembered while it is hidden.
  */
-export function TabNav({label, children}: {label: string; children: ReactNode}) {
+export function TabNav({label, children, more}: {label: string; children: ReactNode; more?: ((from: number) => ReactNode) | undefined}) {
   const nav = useRef<HTMLElement>(null);
+  const widths = useRef(new Map<string, number>());
+  const [fit, setFit] = useState(Infinity);
+  const tabs = Children.toArray(children);
+  const overflow = more !== undefined;
+  const measure = useCallback(() => {
+    const el = nav.current;
+    if (!el || !overflow) return;
+    // The bar's children: one slot per tab (data-tab: its key), the overflow menu last.
+    const kids = [...el.children] as HTMLElement[];
+    const slots = kids.filter((k) => k.dataset.tab !== undefined);
+    for (const s of slots) if (!s.hidden) widths.current.set(s.dataset.tab ?? '', s.offsetWidth);
+    const style = getComputedStyle(el);
+    const room = el.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const moreWidth = kids.at(-1)?.dataset.tab === undefined ? kids.at(-1)?.offsetWidth ?? 0 : 0;
+    setFit(fitCount(slots.map((s) => widths.current.get(s.dataset.tab ?? '')), room, parseFloat(style.columnGap) || 0, moreWidth));
+  }, [overflow]);
   useLayoutEffect(() => {
+    measure();
     const el = nav.current;
     const tab = el?.querySelector<HTMLElement>('a[aria-current="page"]');
     if (!el || !tab || el.scrollWidth <= el.clientWidth) return;
     const left = tab.offsetLeft - el.offsetLeft;
     if (left < el.scrollLeft || left + tab.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = left - (el.clientWidth - tab.offsetWidth) / 2;
   });
-  return <nav ref={nav} aria-label={label} className="flex h-header shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-4">{children}</nav>;
+  useEffect(() => {
+    const el = nav.current;
+    if (!el || !overflow) return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [measure, overflow]);
+  return (
+    <nav ref={nav} aria-label={label} className="flex h-header shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-4">
+      {more ? <>
+        {tabs.map((t, i) => {
+          const key = isValidElement(t) && t.key !== null ? t.key : String(i);
+          return <div key={key} data-tab={key} hidden={i >= fit} className={i >= fit ? 'hidden' : 'flex shrink-0'}>{t}</div>;
+        })}
+        <div className="flex shrink-0">{more(Math.min(fit, tabs.length))}</div>
+      </> : children}
+    </nav>
+  );
 }
 
-/** One tab: wraps a router <Link>, which sets aria-current="page" on the active route. */
-export function TabLink({children}: {children: ReactElement}) {
-  return (
+/**
+ * How many leading tabs of `widths` fit in `room` px with `gap` between items and the overflow menu
+ * (`moreWidth`) last. Infinity when all fit, or when the bar is not laid out (no room, a width unknown or 0).
+ */
+export function fitCount(widths: readonly (number | undefined)[], room: number, gap: number, moreWidth: number): number {
+  if (room <= 0 || widths.some((w) => !w)) return Infinity;
+  let used = moreWidth;
+  for (const [i, w] of widths.entries()) {
+    used += (w ?? 0) + gap;
+    if (used > room) return i;
+  }
+  return Infinity;
+}
+
+/** One tab: wraps a router <Link>, which sets aria-current="page" on the active route (`tooltip`: a hint on hover). */
+export function TabLink({children, tooltip}: {children: ReactElement; tooltip?: string | undefined}) {
+  const tab = (
     <Slot.Root className="interactive flex h-control shrink-0 items-center gap-1.5 rounded-md px-2.5 text-base whitespace-nowrap text-fg-muted hover:bg-hover hover:text-fg aria-[current=page]:bg-selected aria-[current=page]:text-fg">
       {children}
     </Slot.Root>
   );
+  return tooltip ? <Tooltip content={tooltip}>{tab}</Tooltip> : tab;
 }
 

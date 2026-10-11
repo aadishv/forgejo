@@ -4689,7 +4689,7 @@ does) **and** MySQL 8.0 (binlog on).
   * **Files.**
     * `src/code/` (pure or session-level, tested): `diff.ts` (unified diff parser: C-quoted paths, renames/copies, binary, `\ No newline`, CRLF, a stream cut short), `anchor.ts` (review comments → diff lines), `rows.ts` (the diff's virtual rows), `cache.ts` (`CodeCache`: IndexedDB `blobs` + memory LRU), `source.ts` (`CodeSource`: every read by SHA, the highlighter worker and its watchdog), `pull.ts` (a PR's (merge base, head)), `prefetch.ts`, `review.ts` (drafts, submit), `viewed.ts`, `refs.ts` (code URLs, ref → SHA), `logs.ts` + `logfeed.ts` (job logs), `ansi.ts`, `lang.ts`.
     * `src/workers/code.worker.ts` + `highlight.ts` (Shiki core, JS regex engine, one lazy chunk per grammar).
-    * `src/features/code/` — `CodePage.tsx` (route dispatch, `CodeFrame`), `nav.tsx` (`codeTo`, `RepoTabs`), `hooks.ts` (`useLoad`, `refTable`), `Lines.tsx` (virtualized code lines), `RowList.tsx` (virtualized listbox), `Src.tsx` (tree, file, blame, image, breadcrumbs, ref menu), `History.tsx` (commits, commit), `Compare.tsx`, `Refs.tsx` (branches, tags, releases), `Actions.tsx` (runs, jobs, live log), `DiffView.tsx`, `bits.tsx`, `states.tsx`.
+    * `src/features/code/` — `CodePage.tsx` (route dispatch, `CodeFrame`), `nav.tsx` (`codeTo`, `CodeLink`; the tabs are `RepoTabs` in `features/repo/repoPage.tsx`), `hooks.ts` (`useLoad`, `refTable`), `Lines.tsx` (virtualized code lines), `RowList.tsx` (virtualized listbox), `Src.tsx` (tree, file, blame, image, breadcrumbs), `RefMenu.tsx` (the branch or tag picker, also on the overview), `History.tsx` (commits, commit), `Compare.tsx`, `Refs.tsx` (branches, tags, releases), `Actions.tsx` (runs, jobs, live log), `DiffView.tsx`, `bits.tsx`, `states.tsx`.
     * `src/features/pull/Pull.tsx` (files/commits/checks tabs, review UI, merge box); `features/issue/IssueView.tsx` (PR tabs, `?tab=`).
     * `src/ui/` — `Code.tsx` (`CodeLine`, `CodeTokens`, `AnsiText`, `LineNo`, `LineAction`, `BlameCell`, `StepHeader`, `DiffStat`, `CodeFileHeader`, `TabNav`/`TabLink`), `Card.tsx`, `SegmentedControl.tsx` (Radix ToggleGroup). Tokens: `syn-*` and `diff-add/del(-strong)` (light/dark, contrast-tested), `--text-code`, `--spacing-line/gutter/blame`, `--code-tab-size`, `--thread-indent`; utilities `code-text`, `w-view`, `h-view`, `min-w-code`, `pl-thread`.
     * `src/sync/client.ts`, `data.ts` (log tail), `intents/` (`review.submit` comments, `pr.viewed`, `DraftRecord.anchor`), `app/router.tsx` (`/-/next/code/$owner/$repo/$`), keymap (`g c`, `v`, `R`), Shell (prefetch on idle, purge on revoke), Palette (`code`), `vite.config.ts` (`worker.format: 'es'`, toggle-group), `tools/vite-plugin-shell.ts` (see Build).
@@ -5704,6 +5704,18 @@ below is the permanent part.
     navigation are not crawled. Pages it does not reach by a link of its own seed (compare, blame of a tag) are covered by the
     code e2e spec.
   * The Go livesync integration tests ran on PostgreSQL only in this pass (the new cancellation test on both).
+* **Repository tabs like GitHub's (2026-10-11).** `RepoTabs` (`features/repo/repoPage.tsx`) is GitHub's row: Code,
+  Issues, Pull requests, Actions, Projects, Wiki, Activity (GitHub's Insights) and, for admins, Settings. The Overview
+  and Code tabs were one page: Code leads to `/{owner}/{repo}` and is current there and on every code view (source,
+  blame, history, a commit, compare, branches, tags, releases; `tabOfPath`, tested); the Commits, Branches, Tags and
+  Releases tabs are gone. Projects is the board when the repository has one open board, a menu of them when it has
+  more, the classic list otherwise. Wiki, Activity and Settings open the classic pages (`data-classic`, the
+  `CLASSIC_HINT` tooltip), one entry each to repoint when they are ported. Tabs that do not fit go into "More"
+  (`TabNav`'s `more`: widths measured, `fitCount` tested), which also has "This page" in the classic UI. Above the
+  overview's files, as on GitHub: the branch picker (`features/code/RefMenu.tsx`, the code views' picker, moved out of
+  `Src.tsx` so the overview does not load the source view; choosing a branch opens its tree), "N branches" (the
+  branches page) and, on the latest commit's bar, History (`commits/branch/<default>`); no count of commits: the pool
+  has none and the overview asks nothing more of the network. Releases and tags are reached from the About pane.
 
 ---
 

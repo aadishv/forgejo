@@ -33,6 +33,8 @@ const sampleHl = {spans: Uint32Array.of(5, 1, 10, 0, 2, 5, 2, 0, 5, 3), starts: 
 
 const themes = [['light', Sun], ['dark', Moon], ['system', SunMoon]] as const;
 
+const OVERFLOW_TABS = ['Code', 'Issues', 'Pull requests', 'Actions', 'Projects', 'Wiki', 'Activity', 'Settings'];
+
 const rows = [
   {id: 'FJ-128', title: 'Sync log trims too early on MySQL with binlog off', labels: [['bug', 'var(--color-danger)']]},
   {id: 'FJ-131', title: 'Keyboard shortcut hints in menus', labels: [['ui', 'var(--color-accent)'], ['good first issue', 'var(--color-success)']]},
@@ -280,6 +282,20 @@ export default function Gallery() {
               <TabLink><a href="#code" aria-current="page">Files</a></TabLink>
               <TabLink><a href="#code">Commits</a></TabLink>
             </TabNav>
+            {/* A repository's tabs in a narrow bar: what does not fit is in More (TabNav's `more`). */}
+            <div className="max-w-sm">
+              <TabNav label="Example tabs that overflow" more={(from) => (
+                <Menu>
+                  <MenuTrigger asChild><Button size="sm" variant="ghost" icon={MoreHorizontal}>More</Button></MenuTrigger>
+                  <MenuContent>
+                    {OVERFLOW_TABS.slice(from).map((t) => <MenuItem key={t}>{t}</MenuItem>)}
+                    <MenuItem>This page in the classic UI</MenuItem>
+                  </MenuContent>
+                </Menu>
+              )}>
+                {OVERFLOW_TABS.map((t, i) => <TabLink key={t}><a href="#code" aria-current={i === 0 ? 'page' : undefined}>{t}</a></TabLink>)}
+              </TabNav>
+            </div>
             <CodeFileHeader path="src/app.ts" oldPath="src/old.ts" status="renamed" stat={<DiffStat additions={12} deletions={3}/>}>
               <Button size="sm" pressed>Viewed</Button>
             </CodeFileHeader>
